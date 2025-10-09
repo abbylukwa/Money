@@ -1,7 +1,7 @@
 const WhatsApp = require("./client")
 const GroupManager = require("./plugins/group-manager")
 const Marketplace = require("./plugins/marketplace")
-const KeepAlive = require("./keep-alive")
+const KeepAlive = require("./keep alive")
 
 const start = async () => {
   try {
