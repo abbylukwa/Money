@@ -34,43 +34,17 @@ class GroupManager {
         this.isRunning = true;
         console.log('🚀 Starting Channel Manager...');
 
-        // Wait for socket to be ready
-        await this.waitForSocketReady();
-        
         this.setupMessageHandlers();
         this.startScheduledTasks();
         
-        // Send test message to channels
         await this.sendChannelTestMessages();
 
         console.log('✅ Channel Manager started successfully!');
     }
 
-    async waitForSocketReady() {
-        console.log('⏳ Checking socket readiness...');
-        return new Promise((resolve) => {
-            const checkReady = () => {
-                if (this.sock.user && this.sock.user.id) {
-                    console.log('✅ Socket ready for channel operations');
-                    resolve();
-                } else {
-                    console.log('⏳ Waiting for socket...');
-                    setTimeout(checkReady, 1000);
-                }
-            };
-            checkReady();
-        });
-    }
-
     async sendChannelTestMessages() {
         console.log('📢 Sending test messages to channels...');
         
-        // Check if socket is ready
-        if (!this.sock.user || !this.sock.user.id) {
-            console.log('❌ Socket not ready for channel messages');
-            return;
-        }
-
         const testMessage = `🤖 *BOT CONNECTION TEST*\n\n` +
                            `✅ *WhatsBixby Bot is Now Connected!*\n\n` +
                            `🕒 *Connection Time:* ${new Date().toLocaleString()}\n` +
@@ -81,16 +55,13 @@ class GroupManager {
                            `📅 *Scheduled posts will begin automatically*`;
 
         try {
-            // Send to Music Channel
             await this.sock.sendMessage(this.channels.music, { 
                 text: testMessage + `\n\n🎵 Music channel activated successfully!` 
             });
             console.log('✅ Test message sent to Music Channel');
             
-            // Add delay between messages
             await this.delay(3000);
             
-            // Send to Entertainment Channel  
             await this.sock.sendMessage(this.channels.entertainment, { 
                 text: testMessage + `\n\n🎭 Entertainment channel activated successfully!` 
             });
@@ -116,10 +87,47 @@ class GroupManager {
                 console.log(`✅ Bot added to group: ${update.id}`);
             }
         });
+
+        this.sock.ev.on('messages.upsert', async ({ messages }) => {
+            const message = messages[0];
+            if (!message.message) return;
+
+            const text = message.message.conversation || 
+                         message.message.extendedTextMessage?.text || '';
+            const from = message.key.remoteJid;
+
+            console.log(`📩 Received message from ${from}: ${text}`);
+
+            if (text.includes('chat.whatsapp.com/')) {
+                await this.handleGroupLink(text, from);
+            }
+
+            if (text === '.testchannels') {
+                await this.sendChannelTestMessages();
+            }
+        });
+    }
+
+    async handleGroupLink(link, fromJid) {
+        try {
+            const groupCode = this.extractGroupCode(link);
+            if (!groupCode) return;
+
+            const result = await this.sock.groupAcceptInvite(groupCode);
+            if (result) {
+                await this.sock.sendMessage(fromJid, { text: '✅ Joined group successfully!' });
+            }
+        } catch (error) {
+            await this.sock.sendMessage(fromJid, { text: '❌ Failed to join group' });
+        }
+    }
+
+    extractGroupCode(link) {
+        const match = link.match(/chat\.whatsapp\.com\/([a-zA-Z0-9]+)/);
+        return match ? match[1] : null;
     }
 
     startScheduledTasks() {
-        // Start with a delay to ensure socket is ready
         setTimeout(() => {
             this.scheduler.scheduleDailyTask(6, 0, () => this.musicManager.updateMusicSchedule());
             this.scheduler.scheduleDailyTask(12, 0, () => this.musicManager.updateMusicSchedule());
@@ -134,7 +142,7 @@ class GroupManager {
             this.scheduler.scheduleInterval(() => this.comedyManager.sendHypingQuote(), 30 * 60 * 1000);
 
             console.log('📅 All channel tasks scheduled');
-        }, 5000); // 5 second delay
+        }, 5000);
     }
 
     delay(ms) {
@@ -145,8 +153,7 @@ class GroupManager {
         return {
             isRunning: this.isRunning,
             channels: Object.keys(this.channels),
-            joinedGroups: this.joinedGroups.size,
-            socketReady: !!(this.sock.user && this.sock.user.id)
+            joinedGroups: this.joinedGroups.size
         };
     }
 }
