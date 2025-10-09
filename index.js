@@ -1,6 +1,5 @@
 const WhatsApp = require("./client")
 const GroupManager = require("./plugins/group-manager")
-const AutoJoinManager = require("./plugins/auto-join-manager")
 const Marketplace = require("./plugins/marketplace")
 const KeepAlive = require("./keep-alive")
 
