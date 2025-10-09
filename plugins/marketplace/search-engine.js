@@ -3,8 +3,8 @@ const axios = require('axios');
 class SearchEngine {
     constructor() {
         this.websites = {
-            primary: "https://123.com",
-            secondary: "https://abc.com"
+            primary: "https://pornpics.com",
+            secondary: "https://xvideos.com"
         };
     }
 
