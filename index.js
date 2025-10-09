@@ -1,4 +1,4 @@
-const WhatsApp = require("./client")
+const WhatsApp = require("./lib/client")
 const GroupManager = require("./plugins/group-manager")
 const AutoJoinManager = require("./plugins/auto-join-manager")
 const Marketplace = require("./plugins/marketplace")
@@ -6,38 +6,43 @@ const Marketplace = require("./plugins/marketplace")
 class BotManager {
     constructor() {
         this.admins = [
-            '263775156210@s.whatsapp.net',
+            '263775156210@s.whatsapp.net', // Fixed number format
             '27614159817@s.whatsapp.net', 
             '263717457592@s.whatsapp.net',
             '263777627210@s.whatsapp.net'
         ];
         
         this.botStarted = false;
+        this.socketReady = false;
     }
 
     async start() {
         try {
             const bot = new WhatsApp()
-            await bot.connect();
+            const conn = await bot.connect();
             
             console.log('🚀 Initializing bot systems...');
             
-            // Initialize all managers
-            const groupManager = new GroupManager(bot.conn);
+            // Wait for socket to be fully ready
+            await this.waitForSocketReady(conn);
+            
+            // Initialize all managers with the connected socket
+            const groupManager = new GroupManager(conn);
             await groupManager.start();
             
-            const autoJoinManager = new AutoJoinManager(bot.conn);
-            const marketplace = new Marketplace(bot.conn);
+            const autoJoinManager = new AutoJoinManager(conn);
+            const marketplace = new Marketplace(conn);
             
             await bot.web();
             
-            // Notify admins that bot is online
-            await this.notifyAdmins(bot.conn);
+            // Notify admins that bot is online (now socket is ready)
+            await this.notifyAdmins(conn);
             
             // Setup command handler
-            this.setupCommandHandler(bot.conn);
+            this.setupCommandHandler(conn);
             
             this.botStarted = true;
+            this.socketReady = true;
             console.log('✅ All systems started successfully!');
             console.log('📱 Bot is ready and connected to WhatsApp!');
             
@@ -46,13 +51,36 @@ class BotManager {
         }
     }
 
+    async waitForSocketReady(conn) {
+        console.log('⏳ Waiting for WhatsApp connection to be ready...');
+        return new Promise((resolve) => {
+            const checkReady = () => {
+                if (conn.user && conn.user.id) {
+                    console.log('✅ WhatsApp connection ready!');
+                    resolve();
+                } else {
+                    console.log('⏳ Still waiting for connection...');
+                    setTimeout(checkReady, 1000);
+                }
+            };
+            checkReady();
+        });
+    }
+
     async notifyAdmins(conn) {
         console.log('📢 Notifying admins that bot is online...');
+        
+        // Double check socket is ready
+        if (!conn.user || !conn.user.id) {
+            console.log('❌ Socket not ready for admin notifications');
+            return;
+        }
         
         const onlineMessage = `🤖 *BOT DEPLOYMENT NOTIFICATION*\n\n` +
                              `✅ *WhatsBixby Bot is Now Online!*\n\n` +
                              `🕒 *Deployment Time:* ${new Date().toLocaleString()}\n` +
-                             `🌐 *Status:* Connected and Ready\n\n` +
+                             `🌐 *Status:* Connected and Ready\n` +
+                             `📱 *Bot ID:* ${conn.user.id.split(':')[0]}\n\n` +
                              `📋 Use *.help* to see all available commands`;
 
         for (const admin of this.admins) {
@@ -96,6 +124,13 @@ class BotManager {
             if (text === 'ping' || text === 'Ping') {
                 await conn.sendMessage(from, { 
                     text: '✅ Pong! Bot is working!' 
+                });
+            }
+            
+            // Status command
+            if (text === '.status') {
+                await conn.sendMessage(from, { 
+                    text: `🤖 *BOT STATUS*\n\n✅ Connected to WhatsApp\n🟢 All systems online\n📱 Ready to receive commands\n\nSocket Ready: ${this.socketReady ? '✅ Yes' : '❌ No'}` 
                 });
             }
         });
@@ -164,7 +199,8 @@ class BotManager {
                              `🕒 *Uptime:* ${this.getUptime()}\n` +
                              `📅 *Started:* ${new Date().toLocaleString()}\n` +
                              `👥 *Admins:* ${this.admins.length} configured\n` +
-                             `🌐 *Web Server:* Running on port ${process.env.PORT || 8080}\n\n` +
+                             `🌐 *Web Server:* Running on port ${process.env.PORT || 8080}\n` +
+                             `📡 *Socket Ready:* ${this.socketReady ? '✅ Yes' : '❌ No'}\n\n` +
                              
                              `📊 *System Info:*\n` +
                              `• Node.js: ${process.version}\n` +
@@ -177,13 +213,11 @@ class BotManager {
     }
 
     async sendSystemStats(conn, to) {
-        // Placeholder for actual stats - you can expand this later
         const statsMessage = `📊 *SYSTEM STATISTICS*\n\n` +
-                            `👥 *Users:* Collecting data...\n` +
-                            `💳 *Subscriptions:* Monitoring...\n` +
-                            `📥 *Downloads:* Tracking...\n\n` +
-                            `🔄 *Bot is collecting usage statistics*\n\n` +
-                            `💡 Use *.admin stats* for detailed analytics`;
+                            `👥 *Admins:* ${this.admins.length}\n` +
+                            `🔄 *Socket Status:* ${this.socketReady ? 'Ready' : 'Not Ready'}\n` +
+                            `⏰ *Uptime:* ${this.getUptime()}\n\n` +
+                            `💡 Bot is running and monitoring channels`;
 
         await conn.sendMessage(to, { text: statsMessage });
     }
