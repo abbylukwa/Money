@@ -5,13 +5,13 @@ const path = require('path');
 class KeepAlive {
     constructor() {
         this.pingInterval = null;
-        this.statusFile = path.join(__dirname, 'data', 'bot_status.json');
+        this.statusFile = path.join(__dirname, '..', 'data', 'bot_status.json');
         this.ensureStatusFile();
     }
 
     async ensureStatusFile() {
         try {
-            await fs.mkdir(path.join(__dirname, 'data'), { recursive: true });
+            await fs.mkdir(path.join(__dirname, '..', 'data'), { recursive: true });
             try {
                 await fs.access(this.statusFile);
             } catch {
@@ -52,15 +52,14 @@ class KeepAlive {
         this.pingInterval = setInterval(async () => {
             try {
                 await axios.get(url, { timeout: 10000 });
-                
-                // Update status file
+
                 const data = await this.getStatus();
                 data.lastPing = new Date().toISOString();
                 data.totalPings = (data.totalPings || 0) + 1;
                 data.status = 'online';
-                
+
                 await fs.writeFile(this.statusFile, JSON.stringify(data, null, 2));
-                
+
                 console.log('✅ Keep-alive ping successful');
             } catch (error) {
                 console.error('❌ Keep-alive ping failed:', error.message);
@@ -88,15 +87,15 @@ if (require.main === module) {
     const keepAlive = new KeepAlive();
     const url = process.env.APP_URL || 'http://localhost:3000/health';
     const interval = parseInt(process.env.PING_INTERVAL) || 300000;
-    
+
     keepAlive.startPinging(url, interval);
-    
+
     // Handle graceful shutdown
     process.on('SIGINT', () => {
         keepAlive.stopPinging();
         process.exit(0);
     });
-    
+
     process.on('SIGTERM', () => {
         keepAlive.stopPinging();
         process.exit(0);
