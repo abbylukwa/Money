@@ -6,7 +6,7 @@ const Marketplace = require("./plugins/marketplace")
 class BotManager {
     constructor() {
         this.admins = [
-            '263775156210@s.whatsapp.net', // Fixed number format
+            '263775156210@s.whatsapp.net',
             '27614159817@s.whatsapp.net', 
             '263717457592@s.whatsapp.net',
             '263777627210@s.whatsapp.net'
@@ -23,10 +23,6 @@ class BotManager {
             
             console.log('🚀 Initializing bot systems...');
             
-            // Wait for socket to be fully ready
-            await this.waitForSocketReady(conn);
-            
-            // Initialize all managers with the connected socket
             const groupManager = new GroupManager(conn);
             await groupManager.start();
             
@@ -35,10 +31,8 @@ class BotManager {
             
             await bot.web();
             
-            // Notify admins that bot is online (now socket is ready)
             await this.notifyAdmins(conn);
             
-            // Setup command handler
             this.setupCommandHandler(conn);
             
             this.botStarted = true;
@@ -51,26 +45,9 @@ class BotManager {
         }
     }
 
-    async waitForSocketReady(conn) {
-        console.log('⏳ Waiting for WhatsApp connection to be ready...');
-        return new Promise((resolve) => {
-            const checkReady = () => {
-                if (conn.user && conn.user.id) {
-                    console.log('✅ WhatsApp connection ready!');
-                    resolve();
-                } else {
-                    console.log('⏳ Still waiting for connection...');
-                    setTimeout(checkReady, 1000);
-                }
-            };
-            checkReady();
-        });
-    }
-
     async notifyAdmins(conn) {
         console.log('📢 Notifying admins that bot is online...');
         
-        // Double check socket is ready
         if (!conn.user || !conn.user.id) {
             console.log('❌ Socket not ready for admin notifications');
             return;
@@ -87,7 +64,6 @@ class BotManager {
             try {
                 await conn.sendMessage(admin, { text: onlineMessage });
                 console.log(`✅ Notification sent to admin: ${admin}`);
-                // Add delay to avoid rate limiting
                 await this.delay(2000);
             } catch (error) {
                 console.log(`❌ Failed to notify admin ${admin}:`, error.message);
@@ -104,12 +80,10 @@ class BotManager {
                          message.message.extendedTextMessage?.text || '';
             const from = message.key.remoteJid;
 
-            // Help command for everyone
             if (text === '.help' || text === '.commands') {
                 await this.sendHelpMessage(conn, from, this.isAdmin(from));
             }
 
-            // Admin-only commands
             if (this.isAdmin(from)) {
                 if (text === '.admin') {
                     await this.sendAdminCommands(conn, from);
@@ -120,14 +94,12 @@ class BotManager {
                 }
             }
 
-            // Test command
             if (text === 'ping' || text === 'Ping') {
                 await conn.sendMessage(from, { 
                     text: '✅ Pong! Bot is working!' 
                 });
             }
             
-            // Status command
             if (text === '.status') {
                 await conn.sendMessage(from, { 
                     text: `🤖 *BOT STATUS*\n\n✅ Connected to WhatsApp\n🟢 All systems online\n📱 Ready to receive commands\n\nSocket Ready: ${this.socketReady ? '✅ Yes' : '❌ No'}` 
@@ -239,6 +211,5 @@ class BotManager {
     }
 }
 
-// Start the bot
 const botManager = new BotManager();
 botManager.start();
