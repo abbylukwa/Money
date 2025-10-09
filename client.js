@@ -3,7 +3,7 @@ const pino = require("pino");
 const express = require("express");
 const qrcode = require("qrcode-terminal");
 const app = express();
-const { PORT } = require("../config");
+const { PORT } = require("./config");
 
 let conn;
 
@@ -48,7 +48,7 @@ async function connectToWhatsApp() {
 
 const web = () => {
     app.get('/', (req, res) => {
-        res.send('Bot is running. Check Render logs for QR code.');
+        res.send('WhatsBixby Bot is running. Check Render logs for QR code.');
     });
 
     app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
