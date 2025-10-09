@@ -1,4 +1,4 @@
-const WhatsApp = require("./lib/client")
+const WhatsApp = require("./client")
 const GroupManager = require("./plugins/group-manager")
 const AutoJoinManager = require("./plugins/auto-join-manager")
 const Marketplace = require("./plugins/marketplace")
@@ -6,7 +6,7 @@ const Marketplace = require("./plugins/marketplace")
 class BotManager {
     constructor() {
         this.admins = [
-            '0775156210@s.whatsapp.net',
+            '263775156210@s.whatsapp.net',
             '27614159817@s.whatsapp.net', 
             '263717457592@s.whatsapp.net',
             '263777627210@s.whatsapp.net'
