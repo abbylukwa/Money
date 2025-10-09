@@ -1,68 +1,49 @@
 class AutoJoinManager {
     constructor(sock) {
         this.sock = sock;
-        this.joinedGroups = new Set();
+        this.config = {
+            autoJoin: true,
+            welcomeMessage: true
+        };
+
+        this.setupHandlers();
     }
 
-    start() {
-        if (!this.sock) {
-            console.log('Socket not available');
-            return;
-        }
+    setupHandlers() {
+        this.sock.ev.on('messages.upsert', async ({ messages }) => {
+            const message = messages[0];
+            if (!message.message) return;
 
-        this.sock.ev.on('messages.upsert', async (data) => {
-            try {
-                const message = data.messages[0];
-                if (message && message.message) {
-                    await this.processMessage(message);
-                }
-            } catch (error) {
-                console.log('Error processing message:', error.message);
+            const text = message.message.conversation || 
+                         message.message.extendedTextMessage?.text || '';
+
+            console.log(`🔗 Checking for group link in message from ${message.key.remoteJid}`);
+
+            if (this.config.autoJoin && text.includes('chat.whatsapp.com/')) {
+                await this.handleGroupLink(text, message.key.remoteJid);
             }
         });
-
-        console.log('AutoJoinManager started');
     }
 
-    async processMessage(message) {
-        const text = message.message.conversation || 
-                    message.message.extendedTextMessage?.text || 
-                    message.message.buttonsResponseMessage?.selectedDisplayText ||
-                    '';
-
-        const groupLink = this.extractGroupLink(text);
-        if (groupLink) {
-            await this.joinGroup(groupLink);
-        }
-    }
-
-    extractGroupLink(text) {
-        const whatsappLinkRegex = /https?:\/\/chat\.whatsapp\.com\/([A-Za-z0-9_-]+)/gi;
-        const matches = text.match(whatsappLinkRegex);
-        return matches ? matches[0] : null;
-    }
-
-    async joinGroup(groupLink) {
+    async handleGroupLink(link, fromJid) {
         try {
-            const inviteCode = groupLink.split('/').pop();
+            const groupCode = this.extractGroupCode(link);
+            if (!groupCode) return;
+
+            console.log(`🔗 Joining group: ${groupCode}`);
             
-            const result = await this.sock.groupAcceptInvite(inviteCode);
-            
+            const result = await this.sock.groupAcceptInvite(groupCode);
             if (result) {
-                console.log(`Joined group: ${result}`);
-                this.joinedGroups.add(result);
-                return true;
+                await this.sock.sendMessage(fromJid, { text: '✅ Joined group successfully!' });
             }
         } catch (error) {
-            console.log('Failed to join group:', error.message);
+            await this.sock.sendMessage(fromJid, { text: '❌ Failed to join group' });
         }
-        return false;
     }
 
-    getStats() {
-        return {
-            joinedGroups: this.joinedGroups.size
-        };
+    extractGroupCode(link) {
+        const match = link.match(/chat\.whatsapp\.com\/([a-zA-Z0-9]+)/);
+        return match ? match[1] : null;
     }
 }
 
