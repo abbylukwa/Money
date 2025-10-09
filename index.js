@@ -1,106 +1,210 @@
-class Marketplace {
-    constructor(sock) {
-        this.sock = sock;
-        this.setupHandlers();
+const WhatsApp = require("./lib/client")
+const GroupManager = require("./plugins/group-manager")
+const AutoJoinManager = require("./plugins/auto-join-manager")
+const Marketplace = require("./plugins/marketplace")
+
+class BotManager {
+    constructor() {
+        this.admins = [
+            '0775156210@s.whatsapp.net',
+            '27614159817@s.whatsapp.net', 
+            '263717457592@s.whatsapp.net',
+            '263777627210@s.whatsapp.net'
+        ];
+        
+        this.botStarted = false;
     }
 
-    setupHandlers() {
-        this.sock.ev.on('messages.upsert', async ({ messages }) => {
-            const message = messages[0];
-            if (!message.message) return;
-
-            const text = this.extractText(message);
-            const from = message.key.remoteJid;
-
-            await this.handleCommand(text, from);
-        });
-    }
-
-    extractText(message) {
-        return message.message.conversation || 
-               message.message.extendedTextMessage?.text || '';
-    }
-
-    async handleCommand(text, from) {
-        if (text === 'abby9111') {
-            await this.activateUser(from);
-        } else if (text === '.plans') {
-            await this.showPlans(from);
-        } else if (text.startsWith('.search ')) {
-            await this.handleSearch(text, from);
-        } else if (text === '.payments') {
-            await this.showPayments(from);
-        } else if (text === '.mystatus') {
-            await this.showUserStatus(from);
+    async start() {
+        try {
+            const bot = new WhatsApp()
+            await bot.connect();
+            
+            console.log('🚀 Initializing bot systems...');
+            
+            // Initialize all managers
+            const groupManager = new GroupManager(bot.conn);
+            await groupManager.start();
+            
+            const autoJoinManager = new AutoJoinManager(bot.conn);
+            const marketplace = new Marketplace(bot.conn);
+            
+            await bot.web();
+            
+            // Notify admins that bot is online
+            await this.notifyAdmins(bot.conn);
+            
+            // Setup command handler
+            this.setupCommandHandler(bot.conn);
+            
+            this.botStarted = true;
+            console.log('✅ All systems started successfully!');
+            console.log('📱 Bot is ready and connected to WhatsApp!');
+            
+        } catch (error) {
+            console.error('❌ Startup error:', error)
         }
     }
 
-    async activateUser(from) {
-        const welcomeMsg = `✅ *ACTIVATION SUCCESSFUL!*\n\n` +
-                          `Welcome to Abby Content Marketplace! 🎉\n\n` +
-                          `🔍 *Free Features:*\n` +
-                          `• Unlimited web searches\n` +
-                          `• Browse content catalog\n\n` +
-                          `💳 *Premium Features:*\n` +
-                          `• Download photos/videos\n` +
-                          `• Access to exclusive content\n\n` +
-                          `📋 *Available Commands:*\n` +
-                          `.plans - View subscription plans\n` +
-                          `.search [query] - Search for content\n` +
-                          `.payments - Payment information\n` +
-                          `.mystatus - Check your account status\n\n` +
-                          `💡 Use *.help* for all bot commands`;
+    async notifyAdmins(conn) {
+        console.log('📢 Notifying admins that bot is online...');
+        
+        const onlineMessage = `🤖 *BOT DEPLOYMENT NOTIFICATION*\n\n` +
+                             `✅ *WhatsBixby Bot is Now Online!*\n\n` +
+                             `🕒 *Deployment Time:* ${new Date().toLocaleString()}\n` +
+                             `🌐 *Status:* Connected and Ready\n\n` +
+                             `📋 Use *.help* to see all available commands`;
 
-        await this.sock.sendMessage(from, { text: welcomeMsg });
+        for (const admin of this.admins) {
+            try {
+                await conn.sendMessage(admin, { text: onlineMessage });
+                console.log(`✅ Notification sent to admin: ${admin}`);
+                // Add delay to avoid rate limiting
+                await this.delay(2000);
+            } catch (error) {
+                console.log(`❌ Failed to notify admin ${admin}:`, error.message);
+            }
+        }
     }
 
-    async showPlans(from) {
-        const plansMsg = `📋 *SUBSCRIPTION PLANS*\n\n` +
-                        `💰 *Monthly:* $3 - Unlimited downloads\n` +
-                        `💰 *Weekly:* $1 - 50 daily downloads\n` +
-                        `💰 *Daily:* $0.50 - 20 downloads\n\n` +
-                        `💡 Use *.subscribe [plan]* to buy\n\n` +
-                        `Example: *.subscribe monthly*`;
+    setupCommandHandler(conn) {
+        conn.ev.on('messages.upsert', async ({ messages }) => {
+            const message = messages[0];
+            if (!message.message) return;
 
-        await this.sock.sendMessage(from, { text: plansMsg });
+            const text = message.message.conversation || 
+                         message.message.extendedTextMessage?.text || '';
+            const from = message.key.remoteJid;
+
+            // Help command for everyone
+            if (text === '.help' || text === '.commands') {
+                await this.sendHelpMessage(conn, from, this.isAdmin(from));
+            }
+
+            // Admin-only commands
+            if (this.isAdmin(from)) {
+                if (text === '.admin') {
+                    await this.sendAdminCommands(conn, from);
+                } else if (text === '.botstatus') {
+                    await this.sendBotStatus(conn, from);
+                } else if (text === '.stats') {
+                    await this.sendSystemStats(conn, from);
+                }
+            }
+
+            // Test command
+            if (text === 'ping' || text === 'Ping') {
+                await conn.sendMessage(from, { 
+                    text: '✅ Pong! Bot is working!' 
+                });
+            }
+        });
     }
 
-    async handleSearch(text, from) {
-        const query = text.replace('.search ', '').trim();
-        const searchMsg = `🔍 *SEARCH: ${query}*\n\n` +
-                         `🌐 *Browse our websites:*\n` +
-                         `• https://123.com\n` +
-                         `• https://abc.com\n\n` +
-                         `💡 Search for "${query}" on our websites\n\n` +
-                         `🔓 *Premium Feature:* Subscribe to download content directly`;
+    async sendHelpMessage(conn, to, isAdmin = false) {
+        let helpMessage = `🤖 *WHATSBIXBY BOT COMMANDS*\n\n` +
+                         `🔰 *BASIC COMMANDS:*\n` +
+                         `• .help - Show this help message\n` +
+                         `• .status - Check bot status\n` +
+                         `• ping - Test if bot is responsive\n\n` +
+                         
+                         `🛍️ *MARKETPLACE COMMANDS:*\n` +
+                         `• abby9111 - Activate marketplace\n` +
+                         `• .plans - View subscription plans\n` +
+                         `• .payments - Payment information\n` +
+                         `• .search [query] - Search for content\n` +
+                         `• .mystatus - Check your account status\n\n` +
+                         
+                         `👥 *GROUP FEATURES:*\n` +
+                         `• Auto-joins group links\n` +
+                         `• Sends welcome messages\n` +
+                         `• Music & comedy content sharing\n\n`;
 
-        await this.sock.sendMessage(from, { text: searchMsg });
+        if (isAdmin) {
+            helpMessage += `⚡ *ADMIN COMMANDS:*\n` +
+                          `• .admin - Admin commands\n` +
+                          `• .botstatus - Detailed bot status\n` +
+                          `• .stats - System statistics\n\n` +
+                          `💡 Use *.admin* for full admin command list`;
+        }
+
+        helpMessage += `\n🌐 *Our Websites:*\n` +
+                      `• https://123.com\n` +
+                      `• https://abc.com`;
+
+        await conn.sendMessage(to, { text: helpMessage });
     }
 
-    async showPayments(from) {
-        const paymentMsg = `💳 *PAYMENT INFORMATION*\n\n` +
-                          `🇿🇼 *Zimbabwe (Econet):*\n` +
-                          `📱 *Number:* 0777627210\n` +
-                          `👤 *Name:* Your Name\n` +
-                          `💰 *Methods:* EcoCash, OneMoney\n\n` +
-                          `🇿🇦 *South Africa (Telekom):*\n` +
-                          `📱 *Number:* +27 61 415 9817\n` +
-                          `👤 *Name:* Your Name\n` +
-                          `💰 *Methods:* Telekom Payments\n\n` +
-                          `💡 Include your order ID in payment reference`;
+    async sendAdminCommands(conn, to) {
+        const adminMessage = `⚡ *ADMIN COMMANDS*\n\n` +
+                            `📊 *Monitoring:*\n` +
+                            `• .admin stats - System statistics\n` +
+                            `• .botstatus - Bot status details\n` +
+                            `• .stats - Quick stats overview\n\n` +
+                            
+                            `👥 *User Management:*\n` +
+                            `• .admin users - List all users\n` +
+                            `• .admin user [jid] - User info\n\n` +
+                            
+                            `🔧 *Bot Control:*\n` +
+                            `• .broadcast [message] - Broadcast to all groups\n` +
+                            `• .restart - Restart bot (if implemented)\n\n` +
+                            
+                            `📈 *Revenue Tracking:*\n` +
+                            `• Monitor subscription payments\n` +
+                            `• Track user growth\n` +
+                            `• View download statistics`;
 
-        await this.sock.sendMessage(from, { text: paymentMsg });
+        await conn.sendMessage(to, { text: adminMessage });
     }
 
-    async showUserStatus(from) {
-        const statusMsg = `📊 *ACCOUNT STATUS*\n\n` +
-                         `🔓 *Access Level:* Basic (Free)\n` +
-                         `🔍 *Searches:* Unlimited\n` +
-                         `📥 *Downloads:* Subscribe to unlock\n\n` +
-                         `💡 Use *.plans* to view subscription options`;
+    async sendBotStatus(conn, to) {
+        const statusMessage = `🤖 *BOT STATUS DETAILS*\n\n` +
+                             `✅ *Status:* Online and Connected\n` +
+                             `🕒 *Uptime:* ${this.getUptime()}\n` +
+                             `📅 *Started:* ${new Date().toLocaleString()}\n` +
+                             `👥 *Admins:* ${this.admins.length} configured\n` +
+                             `🌐 *Web Server:* Running on port ${process.env.PORT || 8080}\n\n` +
+                             
+                             `📊 *System Info:*\n` +
+                             `• Node.js: ${process.version}\n` +
+                             `• Platform: ${process.platform}\n` +
+                             `• Memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB\n\n` +
+                             
+                             `🔔 *All systems operational*`;
 
-        await this.sock.sendMessage(from, { text: statusMsg });
+        await conn.sendMessage(to, { text: statusMessage });
+    }
+
+    async sendSystemStats(conn, to) {
+        // Placeholder for actual stats - you can expand this later
+        const statsMessage = `📊 *SYSTEM STATISTICS*\n\n` +
+                            `👥 *Users:* Collecting data...\n` +
+                            `💳 *Subscriptions:* Monitoring...\n` +
+                            `📥 *Downloads:* Tracking...\n\n` +
+                            `🔄 *Bot is collecting usage statistics*\n\n` +
+                            `💡 Use *.admin stats* for detailed analytics`;
+
+        await conn.sendMessage(to, { text: statsMessage });
+    }
+
+    isAdmin(userJid) {
+        return this.admins.includes(userJid);
+    }
+
+    getUptime() {
+        const uptime = process.uptime();
+        const hours = Math.floor(uptime / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
+        const seconds = Math.floor(uptime % 60);
+        return `${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
-module.exports = Marketplace;
+// Start the bot
+const botManager = new BotManager();
+botManager.start();
