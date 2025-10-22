@@ -49,6 +49,10 @@ module.exports = {
     GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
     SEARCH_ENGINE_ID: process.env.SEARCH_ENGINE_ID || '',
     APP_URL: process.env.APP_URL || 'http://localhost:8080',
+    
+    PHONE_AUTH: toBool(process.env.PHONE_AUTH || "true"),
+    BOT_PHONE_NUMBER: process.env.BOT_PHONE_NUMBER || "263777627210",
+    
     DATABASE: DB_URL ? new Sequelize(DB_URL, {
         dialect: 'postgres',
         ssl: true,
