@@ -2,9 +2,9 @@
   "name": "WhatsBixby",
   "version": "4.2.0",
   "description": "WhatsApp bot with marketplace and auto-join features",
-  "main": "index.js",
+  "main": "client.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node client.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.4.0",
