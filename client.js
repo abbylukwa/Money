@@ -38,7 +38,7 @@ async function connectToWhatsApp() {
                 console.log(`📱 CODE: ${qr}`);
                 console.log('══════════════════════════════════════');
                 console.log('📱 Open WhatsApp → Settings → Linked Devices → Link a Device');
-                console.log('🔢 Choose "Pair with code" and enter the code above');
+                console.log('🔢 Choose "Pair with code" and enter the 8-character code above');
                 console.log('⏳ Waiting for connection...\n');
                 
                 clearTimeout(connectionTimeout);
