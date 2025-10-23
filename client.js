@@ -6,7 +6,7 @@ const { PORT } = require("./config");
 
 async function connectToWhatsApp() {
     try {
-        console.log('🔄 Connecting to WhatsApp...');
+        console.log('🔄 Starting WhatsApp connection...');
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
@@ -14,27 +14,19 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
-            printQRInTerminal: true, // This shows the actual QR code that contains the pairing data
+            printQRInTerminal: true,
             auth: state,
             browser: Browsers.ubuntu('Chrome')
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        let connected = false;
+        let qrDisplayed = false;
 
         sock.ev.on('connection.update', (update) => {
-            const { connection, lastDisconnect, qr } = update;
-
-            if (qr && !connected) {
-                console.log('\n📱 TO GET PAIRING CODE:');
-                console.log('1. Scan this QR code with WhatsApp');
-                console.log('2. OR Use WhatsApp Web pairing feature');
-                console.log('3. Wait for connection...\n');
-            }
+            const { connection, lastDisconnect } = update;
 
             if (connection === 'open') {
-                connected = true;
                 console.log('✅ WhatsApp Connected Successfully!');
                 console.log('🤖 Bot is now ready to receive messages...');
             }
@@ -46,6 +38,14 @@ async function connectToWhatsApp() {
                     setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
+        });
+
+        sock.ev.on('messages.upsert', async (m) => {
+            const msg = m.messages[0];
+            if (!msg.message || msg.key.fromMe) return;
+
+            const sender = msg.key.remoteJid;
+            console.log(`📩 Message received from: ${sender}`);
         });
 
         return sock;
