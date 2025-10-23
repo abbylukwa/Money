@@ -1,13 +1,15 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
-const qrcode = require('qrcode-terminal');
-const pino = require("pino");
-const express = require("express");
-const app = express();
-const { PORT } = require("./config");
+const fs = require('fs');
+const path = require('path');
 
 async function connectToWhatsApp() {
     try {
         console.log('🔄 Starting WhatsApp connection for Abners Bot 2025...');
+        
+        // Check if session exists
+        const sessionExists = fs.existsSync('./session/creds.json');
+        if (sessionExists) {
+            console.log('🔍 Existing session found, attempting to restore...');
+        }
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
@@ -16,7 +18,8 @@ async function connectToWhatsApp() {
             version,
             logger: pino({ level: "silent" }),
             auth: state,
-            browser: Browsers.ubuntu('Chrome')
+            browser: Browsers.ubuntu('Chrome'),
+            printQRInTerminal: false
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -29,8 +32,12 @@ async function connectToWhatsApp() {
             if (qr && !qrDisplayed) {
                 qrDisplayed = true;
                 console.log('\n📱 SCAN THIS QR CODE WITH WHATSAPP:\n');
-                qrcode.generate(qr, { small: true });
-                console.log('\n⏳ Waiting for scan...');
+                
+                // Ensure clean QR display
+                setTimeout(() => {
+                    qrcode.generate(qr, { small: true });
+                    console.log('\n⏳ Please scan the QR code within 30 seconds...');
+                }, 1000);
             }
 
             if (connection === 'open') {
@@ -42,7 +49,10 @@ async function connectToWhatsApp() {
                 console.log('❌ Connection closed');
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
                 if (shouldReconnect) {
+                    console.log('🔄 Attempting to reconnect...');
                     setTimeout(() => connectToWhatsApp(), 5000);
+                } else {
+                    console.log('❌ Invalid session, please delete session folder and restart');
                 }
             }
         });
@@ -54,26 +64,3 @@ async function connectToWhatsApp() {
         setTimeout(() => connectToWhatsApp(), 5000);
     }
 }
-
-const web = () => {
-    app.get('/', (req, res) => res.send('🤖 Abners Bot 2025 - Active & Running'));
-    app.get('/health', (req, res) => res.json({ 
-        status: 'online',
-        bot: 'Abners Bot 2025',
-        timestamp: new Date() 
-    }));
-    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
-}
-
-class WhatsApp {
-    async connect() {
-        this.conn = await connectToWhatsApp();
-        return this.conn;
-    }
-
-    async web() {
-        return web();
-    }
-}
-
-module.exports = WhatsApp;
