@@ -18,7 +18,8 @@ class KeepAlive {
                 await fs.writeFile(this.statusFile, JSON.stringify({
                     lastPing: new Date().toISOString(),
                     totalPings: 0,
-                    status: 'offline'
+                    status: 'offline',
+                    lastUpdate: new Date().toISOString()
                 }));
             }
         } catch (error) {
@@ -26,11 +27,19 @@ class KeepAlive {
         }
     }
 
-    async updateStatus(status) {
+    async updateStatus(status, additionalData = {}) {
         try {
-            const data = JSON.parse(await fs.readFile(this.statusFile, 'utf8'));
+            let data;
+            try {
+                data = JSON.parse(await fs.readFile(this.statusFile, 'utf8'));
+            } catch {
+                data = { totalPings: 0 };
+            }
+            
             data.status = status;
             data.lastUpdate = new Date().toISOString();
+            Object.assign(data, additionalData);
+            
             await fs.writeFile(this.statusFile, JSON.stringify(data, null, 2));
         } catch (error) {
             console.error('Error updating status:', error);
@@ -41,29 +50,43 @@ class KeepAlive {
         try {
             return JSON.parse(await fs.readFile(this.statusFile, 'utf8'));
         } catch (error) {
-            return { status: 'offline', lastPing: null, totalPings: 0 };
+            return { 
+                status: 'offline', 
+                lastPing: null, 
+                totalPings: 0,
+                lastUpdate: new Date().toISOString()
+            };
         }
     }
 
-    startPinging(url, interval = 300000) {
-        console.log('🔄 Starting keep-alive pings...');
+    startPinging(url, interval = 60000) {
+        console.log(`🔔 Starting keep-alive pings to ${url} every ${interval/1000}s...`);
         this.updateStatus('online');
 
         this.pingInterval = setInterval(async () => {
             try {
-                await axios.get(url, { timeout: 10000 });
+                const response = await axios.get(url, { 
+                    timeout: 10000,
+                    validateStatus: function (status) {
+                        return status < 500; // Resolve only if status code < 500
+                    }
+                });
 
                 const data = await this.getStatus();
                 data.lastPing = new Date().toISOString();
                 data.totalPings = (data.totalPings || 0) + 1;
                 data.status = 'online';
+                data.lastResponseCode = response.status;
 
                 await fs.writeFile(this.statusFile, JSON.stringify(data, null, 2));
 
-                console.log('✅ Keep-alive ping successful');
+                console.log(`✅ Keep-alive ping successful (Status: ${response.status})`);
             } catch (error) {
                 console.error('❌ Keep-alive ping failed:', error.message);
-                this.updateStatus('offline');
+                this.updateStatus('offline', { 
+                    lastError: error.message,
+                    lastErrorTime: new Date().toISOString()
+                });
             }
         }, interval);
     }
@@ -76,30 +99,10 @@ class KeepAlive {
         }
     }
 
-    async restartPinging(url, interval = 300000) {
+    async restartPinging(url, interval = 60000) {
         this.stopPinging();
         this.startPinging(url, interval);
     }
-}
-
-// Run if called directly
-if (require.main === module) {
-    const keepAlive = new KeepAlive();
-    const url = process.env.APP_URL || 'http://localhost:3000/health';
-    const interval = parseInt(process.env.PING_INTERVAL) || 300000;
-
-    keepAlive.startPinging(url, interval);
-
-    // Handle graceful shutdown
-    process.on('SIGINT', () => {
-        keepAlive.stopPinging();
-        process.exit(0);
-    });
-
-    process.on('SIGTERM', () => {
-        keepAlive.stopPinging();
-        process.exit(0);
-    });
 }
 
 module.exports = KeepAlive;
