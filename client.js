@@ -1,4 +1,3 @@
-
 const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const qrcode = require('qrcode-terminal');
 const pino = require("pino");
@@ -8,7 +7,7 @@ const { PORT } = require("./config");
 
 async function connectToWhatsApp() {
     try {
-        console.log('🔄 Starting WhatsApp connection...');
+        console.log('🔄 Starting WhatsApp connection for Abners Bot 2025...');
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
@@ -48,14 +47,6 @@ async function connectToWhatsApp() {
             }
         });
 
-        sock.ev.on('messages.upsert', async (m) => {
-            const msg = m.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
-
-            const sender = msg.key.remoteJid;
-            console.log(`📩 Message received from: ${sender}`);
-        });
-
         return sock;
 
     } catch (error) {
@@ -65,13 +56,19 @@ async function connectToWhatsApp() {
 }
 
 const web = () => {
-    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - Active'));
-    app.listen(PORT, () => console.log(`🌐 Web server on port ${PORT}`));
+    app.get('/', (req, res) => res.send('🤖 Abners Bot 2025 - Active & Running'));
+    app.get('/health', (req, res) => res.json({ 
+        status: 'online',
+        bot: 'Abners Bot 2025',
+        timestamp: new Date() 
+    }));
+    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 }
 
 class WhatsApp {
     async connect() {
-        return await connectToWhatsApp();
+        this.conn = await connectToWhatsApp();
+        return this.conn;
     }
 
     async web() {
