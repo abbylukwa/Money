@@ -4,24 +4,15 @@ const pino = require("pino");
 const express = require("express");
 const app = express();
 const { PORT } = require("./config");
+const KeepAlive = require("./keepAlive"); // Your KeepAlive class
 
 class WhatsApp {
     constructor() {
+        this.keepAlive = new KeepAlive();
         this.isConnected = false;
         this.qrDisplayed = false;
         this.connectionAttempts = 0;
         this.maxConnectionAttempts = 5;
-        this.init();
-    }
-
-    init() {
-        // Start web server IMMEDIATELY
-        this.startWebServer();
-        
-        // Start WhatsApp connection in background
-        setTimeout(() => {
-            this.connect();
-        }, 2000);
     }
 
     async connect() {
@@ -41,7 +32,13 @@ class WhatsApp {
             });
 
             this.conn.ev.on('creds.update', saveCreds);
-            this.conn.ev.on('connection.update', (update) => this.handleConnectionUpdate(update));
+
+            this.conn.ev.on('connection.update', (update) => {
+                this.handleConnectionUpdate(update);
+            });
+
+            // Start process keep-alive immediately
+            this.startProcessKeepAlive();
 
             return this.conn;
 
@@ -49,7 +46,10 @@ class WhatsApp {
             console.error('❌ Connection error:', error);
             
             if (this.connectionAttempts < this.maxConnectionAttempts) {
+                console.log('🔄 Retrying connection in 5 seconds...');
                 setTimeout(() => this.connect(), 5000);
+            } else {
+                console.log('❌ Max connection attempts reached. Please check your setup.');
             }
         }
     }
@@ -61,14 +61,23 @@ class WhatsApp {
             this.qrDisplayed = true;
             console.log('\n📱 SCAN THIS QR CODE WITH WHATSAPP:\n');
             qrcode.generate(qr, { small: true });
-            console.log('\n⏳ Waiting for QR scan...');
-            console.log('🌐 Web server is running at http://localhost:' + PORT);
+            console.log('\n⏳ Waiting for QR scan... (Container will stay alive)');
+            
+            // Reset connection attempts when QR is shown
+            this.connectionAttempts = 0;
+            
+            // Extended timeout for QR scanning
+            this.startQRTimeout();
         }
 
         if (connection === 'open') {
             this.isConnected = true;
             console.log('✅ WhatsApp Connected Successfully!');
-            console.log('🤖 Bot is now fully operational!');
+            console.log('🤖 Bot is now ready to receive messages...');
+            
+            // Start web server and keep-alive pings after connection
+            this.startWebServer();
+            this.startKeepAlivePings();
         }
 
         if (connection === 'close') {
@@ -76,63 +85,96 @@ class WhatsApp {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
             
             if (shouldReconnect && this.connectionAttempts < this.maxConnectionAttempts) {
+                console.log('🔄 Attempting to reconnect...');
                 this.isConnected = false;
                 this.qrDisplayed = false;
                 setTimeout(() => this.connect(), 5000);
+            } else {
+                console.log('❌ Max reconnection attempts reached or invalid session.');
             }
         }
     }
 
+    startProcessKeepAlive() {
+        // This keeps the Node.js process from exiting
+        console.log('💓 Starting process keep-alive...');
+        
+        const heartbeat = setInterval(() => {
+            if (!this.isConnected) {
+                console.log('⏰ Still waiting for WhatsApp connection...');
+            } else {
+                clearInterval(heartbeat);
+            }
+        }, 30000); // Log every 30 seconds
+
+        // Prevent immediate exit
+        process.stdin.resume();
+
+        // Handle container signals gracefully
+        process.on('SIGTERM', () => {
+            console.log('📦 Received SIGTERM, but keeping alive for authentication...');
+        });
+
+        process.on('SIGINT', () => {
+            console.log('📦 Received SIGINT, but keeping alive for authentication...');
+        });
+    }
+
+    startQRTimeout() {
+        // Give user 3 minutes to scan QR code
+        setTimeout(() => {
+            if (!this.isConnected) {
+                console.log('\n⚠️  QR Code timeout approaching...');
+                console.log('🔄 If not scanned, the QR will refresh soon...');
+            }
+        }, 180000);
+    }
+
     startWebServer() {
-        // Health endpoint that shows connection status
-        app.get('/health', (req, res) => {
+        app.get('/', (req, res) => res.send('🤖 Abners Bot 2025 - Active & Running'));
+        
+        app.get('/health', async (req, res) => {
+            const status = await this.keepAlive.getStatus();
             res.json({
                 status: 'online',
                 bot: 'Abners Bot 2025',
                 whatsapp: this.isConnected ? 'connected' : 'disconnected',
-                qr_ready: this.qrDisplayed && !this.isConnected,
-                connection_attempts: this.connectionAttempts,
-                timestamp: new Date().toISOString()
+                timestamp: new Date(),
+                ...status
             });
         });
 
-        app.get('/', (req, res) => {
-            if (this.isConnected) {
-                res.send(`
-                    <h1>🤖 Abners Bot 2025</h1>
-                    <p>Status: <strong style="color: green;">Connected ✅</strong></p>
-                    <p>Bot is fully operational and ready to receive messages.</p>
-                `);
-            } else if (this.qrDisplayed) {
-                res.send(`
-                    <h1>🤖 Abners Bot 2025</h1>
-                    <p>Status: <strong style="color: orange;">Waiting for QR Scan 📱</strong></p>
-                    <p>Please scan the QR code in the terminal to connect WhatsApp.</p>
-                `);
-            } else {
-                res.send(`
-                    <h1>🤖 Abners Bot 2025</h1>
-                    <p>Status: <strong style="color: blue;">Starting up... 🔄</strong></p>
-                    <p>Bot is initializing. Please wait...</p>
-                `);
-            }
-        });
-
-        app.get('/status', (req, res) => {
+        app.get('/status', async (req, res) => {
+            const status = await this.keepAlive.getStatus();
             res.json({
-                whatsapp_connected: this.isConnected,
-                qr_displayed: this.qrDisplayed,
-                connection_attempts: this.connectionAttempts,
-                server_time: new Date().toISOString()
+                whatsapp: this.isConnected ? 'connected' : 'disconnected',
+                qrDisplayed: this.qrDisplayed,
+                connectionAttempts: this.connectionAttempts,
+                ...status
             });
         });
 
-        // Start server immediately
         app.listen(PORT, () => {
-            console.log(`🌐 Web server immediately started on port ${PORT}`);
-            console.log(`📊 Health check: http://localhost:${PORT}/health`);
-            console.log(`📱 Status page: http://localhost:${PORT}/status`);
+            console.log(`🌐 Web server running on port ${PORT}`);
+            console.log('✅ Container is now fully operational!');
         });
+    }
+
+    startKeepAlivePings() {
+        // Start pinging your own health endpoint
+        const healthUrl = `http://localhost:${PORT}/health`;
+        this.keepAlive.startPinging(healthUrl, 60000); // Ping every minute
+        
+        console.log('🔔 Keep-alive pings started');
+    }
+
+    async disconnect() {
+        if (this.conn) {
+            await this.conn.end();
+        }
+        this.keepAlive.stopPinging();
+        this.isConnected = false;
+        console.log('🔴 WhatsApp disconnected');
     }
 }
 
