@@ -1,21 +1,22 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
 const qrcode = require("qrcode-terminal");
 const app = express();
 const { PORT } = require("./config");
 
-let conn;
-
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('./session');
     const { version } = await fetchLatestBaileysVersion();
 
-    conn = makeWASocket({
+    const conn = makeWASocket({
         version,
         logger: pino({ level: "silent" }),
         browser: Browsers.ubuntu('Chrome'),
-        auth: state
+        auth: state,
+        printQRInTerminal: true,
+        syncFullHistory: false,
+        markOnlineOnConnect: false
     });
 
     conn.ev.on('creds.update', saveCreds);
@@ -24,22 +25,20 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('Scan this QR code with WhatsApp:');
+            console.log('🔐 Scan QR Code with WhatsApp:');
             qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
+            console.log('🔄 Connection closed, reconnecting in 5 seconds...');
             if (shouldReconnect) {
-                console.log('Connection closed. Reconnecting...');
-                connectToWhatsApp();
-            } else {
-                console.log('Connection closed. Please scan QR again.');
+                setTimeout(() => connectToWhatsApp(), 5000);
             }
         }
 
         if (connection === 'open') {
-            console.log('WhatsApp connected successfully!');
+            console.log('✅ WhatsApp Connected Successfully!');
         }
     });
 
@@ -47,11 +46,8 @@ async function connectToWhatsApp() {
 }
 
 const web = () => {
-    app.get('/', (req, res) => {
-        res.send('WhatsBixby Bot is running. Check Render logs for QR code.');
-    });
-
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+    app.get('/', (req, res) => res.send('Abners Bot - Active & Running'));
+    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 }
 
 class WhatsApp {
@@ -61,7 +57,7 @@ class WhatsApp {
     }
 
     async web() {
-        return await web();
+        return web();
     }
 }
 
