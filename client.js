@@ -1,4 +1,6 @@
+
 const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const qrcode = require('qrcode-terminal');
 const pino = require("pino");
 const express = require("express");
 const app = express();
@@ -14,7 +16,6 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
-            printQRInTerminal: true,
             auth: state,
             browser: Browsers.ubuntu('Chrome')
         });
@@ -24,7 +25,14 @@ async function connectToWhatsApp() {
         let qrDisplayed = false;
 
         sock.ev.on('connection.update', (update) => {
-            const { connection, lastDisconnect } = update;
+            const { connection, lastDisconnect, qr } = update;
+
+            if (qr && !qrDisplayed) {
+                qrDisplayed = true;
+                console.log('\n📱 SCAN THIS QR CODE WITH WHATSAPP:\n');
+                qrcode.generate(qr, { small: true });
+                console.log('\n⏳ Waiting for scan...');
+            }
 
             if (connection === 'open') {
                 console.log('✅ WhatsApp Connected Successfully!');
