@@ -1,5 +1,4 @@
-const { existsSync } = require("fs");
-if (existsSync('config.env')) require('dotenv').config({ path: './config.env' });
+require('dotenv').config();
 
 module.exports = {
     PORT: process.env.PORT || 3000,
