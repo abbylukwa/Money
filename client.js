@@ -1,4 +1,4 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion, getBinaryNodeMessages } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
 const app = express();
@@ -6,130 +6,79 @@ const { PORT } = require("./config");
 
 async function connectToWhatsApp() {
     try {
-        console.log('🔄 Initializing WhatsApp connection...');
+        console.log('🔄 Requesting WhatsApp pairing for: +263775156210');
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
             version,
-            logger: pino({ level: "silent" }),
+            logger: pino({ level: "fatal" }),
             printQRInTerminal: false,
-            auth: state,
-            browser: Browsers.ubuntu('Chrome'),
-            getMessage: async (key) => {
-                return {
-                    conversation: 'hello'
-                }
-            }
+            auth: {
+                ...state,
+                phoneNumber: "+263775156210"
+            },
+            browser: Browsers.ubuntu('Chrome')
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        let pairingCodeShown = false;
+        let pairingRequested = false;
 
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr && !pairingCodeShown) {
-                pairingCodeShown = true;
-                
-                console.log('\n🔐 WHATSAPP PAIRING CODE:');
+            if (!pairingRequested) {
+                pairingRequested = true;
+                console.log('\n🔐 WHATSAPP PAIRING REQUESTED');
                 console.log('══════════════════════════════════════');
-                console.log(`📱 CODE: ${qr}`);
+                console.log('📱 PHONE: +263775156210');
+                console.log('🔢 Waiting for pairing code...');
                 console.log('══════════════════════════════════════');
-                console.log('📱 Open WhatsApp → Settings → Linked Devices → Link a Device');
-                console.log('🔢 Choose "Pair with code" and enter the code above');
-                console.log('⏳ Waiting for connection...\n');
+                console.log('📱 On your phone with number +263775156210:');
+                console.log('1. Open WhatsApp');
+                console.log('2. Go to Settings → Linked Devices → Link a Device');
+                console.log('3. Choose "Pair with code"');
+                console.log('4. Wait for code to appear here...');
+                console.log('⏳ Please wait...\n');
             }
 
-            if (connection === 'close') {
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-                console.log('❌ Connection closed');
-                if (shouldReconnect) {
-                    console.log('🔄 Reconnecting...');
-                    setTimeout(() => connectToWhatsApp(), 5000);
-                }
+            if (qr) {
+                console.log('\n✅ PAIRING CODE RECEIVED:');
+                console.log('══════════════════════════════════════');
+                console.log(`📱 CODE: ${qr.substring(0, 8)}`);
+                console.log('══════════════════════════════════════');
+                console.log('📝 Enter this code in your WhatsApp app\n');
             }
 
             if (connection === 'open') {
-                console.log('✅ WhatsApp Connected Successfully!');
-                console.log('🤖 Bot is now ready to receive messages...');
-                
-                setTimeout(async () => {
-                    try {
-                        const botJid = sock.user.id;
-                        await sock.sendMessage(botJid, { 
-                            text: '🤖 WhatsApp Bot Connected!\nStatus: Online and Ready' 
-                        });
-                        console.log('✅ Self-test message sent');
-                    } catch (error) {
-                        console.log('❌ Self-test failed:', error.message);
-                    }
-                }, 2000);
-            }
-        });
-
-        sock.ev.on('messages.upsert', async (m) => {
-            const msg = m.messages[0];
-            if (!msg.message || msg.key.fromMe) {
-                return;
+                console.log('✅ WhatsApp Connected Successfully for +263775156210!');
+                console.log('🤖 Bot is now active and ready!');
             }
 
-            const sender = msg.key.remoteJid;
-            const messageType = Object.keys(msg.message)[0];
-            let text = '';
-
-            if (messageType === 'conversation') {
-                text = msg.message.conversation;
-            } else if (messageType === 'extendedTextMessage') {
-                text = msg.message.extendedTextMessage.text;
-            }
-
-            console.log(`📩 Message from ${sender}: ${text}`);
-
-            try {
-                if (text) {
-                    const lowercaseText = text.toLowerCase();
-                    
-                    if (lowercaseText === 'ping') {
-                        await sock.sendMessage(sender, { text: '🏓 Pong!' });
-                    } else if (lowercaseText === 'hello' || lowercaseText === 'hi') {
-                        await sock.sendMessage(sender, { 
-                            text: '👋 Hello! I am a WhatsApp Bot.' 
-                        });
-                    } else {
-                        await sock.sendMessage(sender, { 
-                            text: '✅ Message received!' 
-                        });
-                    }
-                }
-            } catch (error) {
-                console.log('❌ Error sending message:', error.message);
+            if (connection === 'close') {
+                console.log('❌ Connection closed');
+                setTimeout(() => connectToWhatsApp(), 5000);
             }
         });
 
         return sock;
 
     } catch (error) {
-        console.error('❌ Connection error:', error);
+        console.error('❌ Error:', error.message);
         setTimeout(() => connectToWhatsApp(), 5000);
     }
 }
 
 const web = () => {
-    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - Active & Running'));
-    app.get('/health', (req, res) => res.json({ 
-        status: 'online',
-        timestamp: new Date() 
-    }));
-    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
+    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - +263775156210'));
+    app.listen(PORT, () => console.log(`🌐 Web server on port ${PORT}`));
 }
 
 class WhatsApp {
     async connect() {
-        this.conn = await connectToWhatsApp();
-        return this.conn;
+        return await connectToWhatsApp();
     }
 
     async web() {
