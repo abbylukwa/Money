@@ -33,12 +33,14 @@ async function connectToWhatsApp() {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
+                const pairingCode = extractPairingCode(qr);
+                
                 console.log('\n🔐 WHATSAPP PAIRING CODE:');
                 console.log('══════════════════════════════════════');
-                console.log(`📱 CODE: ${qr}`);
+                console.log(`📱 CODE: ${pairingCode}`);
                 console.log('══════════════════════════════════════');
                 console.log('📱 Open WhatsApp → Settings → Linked Devices → Link a Device');
-                console.log('🔢 Choose "Pair with code" and enter the 8-character code above');
+                console.log('🔢 Choose "Pair with code" and enter the code above');
                 console.log('⏳ Waiting for connection...\n');
                 
                 clearTimeout(connectionTimeout);
@@ -159,6 +161,56 @@ async function connectToWhatsApp() {
     } catch (error) {
         console.error('❌ Connection error:', error);
         setTimeout(() => connectToWhatsApp(), 5000);
+    }
+}
+
+function extractPairingCode(qrData) {
+    try {
+        if (!qrData) {
+            return 'NO-CODE';
+        }
+        
+        const parts = qrData.split(',');
+        if (parts.length === 0) {
+            return 'NO-CODE';
+        }
+        
+        const firstPart = parts[0];
+        
+        const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+        if (base64Regex.test(firstPart)) {
+            try {
+                const decoded = Buffer.from(firstPart, 'base64').toString('utf-8');
+                const numericMatch = decoded.match(/\d{6,8}/);
+                if (numericMatch) {
+                    return numericMatch[0];
+                }
+            } catch (e) {
+            }
+        }
+        
+        const numericMatch = qrData.match(/\d{6,8}/);
+        if (numericMatch) {
+            return numericMatch[0];
+        }
+        
+        const alphanumericMatch = qrData.match(/[A-Z0-9]{6,8}/gi);
+        if (alphanumericMatch) {
+            return alphanumericMatch[0].toUpperCase();
+        }
+        
+        let code = '';
+        for (let i = 0; i < Math.min(qrData.length, 8); i++) {
+            const char = qrData[i];
+            if (/[A-Z0-9]/i.test(char)) {
+                code += char.toUpperCase();
+            }
+            if (code.length >= 6) break;
+        }
+        
+        return code || 'CODE-ERR';
+    } catch (error) {
+        return 'ERROR';
     }
 }
 
