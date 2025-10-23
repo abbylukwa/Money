@@ -14,7 +14,7 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
-            printQRInTerminal: true,
+            printQRInTerminal: false,
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
             getMessage: async (key) => {
@@ -26,17 +26,20 @@ async function connectToWhatsApp() {
 
         sock.ev.on('creds.update', saveCreds);
 
-        let qrGenerated = false;
+        let pairingCodeShown = false;
 
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr && !qrGenerated) {
-                qrGenerated = true;
-                console.log('\n🔐 SCAN THIS QR CODE WITH YOUR WHATSAPP:');
+            if (qr && !pairingCodeShown) {
+                pairingCodeShown = true;
+                
+                console.log('\n🔐 WHATSAPP PAIRING CODE:');
+                console.log('══════════════════════════════════════');
+                console.log(`📱 CODE: ${qr}`);
                 console.log('══════════════════════════════════════');
                 console.log('📱 Open WhatsApp → Settings → Linked Devices → Link a Device');
-                console.log('📷 Scan the QR code above');
+                console.log('🔢 Choose "Pair with code" and enter the code above');
                 console.log('⏳ Waiting for connection...\n');
             }
 
@@ -45,7 +48,7 @@ async function connectToWhatsApp() {
                 console.log('❌ Connection closed');
                 if (shouldReconnect) {
                     console.log('🔄 Reconnecting...');
-                    connectToWhatsApp();
+                    setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
 
@@ -110,6 +113,7 @@ async function connectToWhatsApp() {
 
     } catch (error) {
         console.error('❌ Connection error:', error);
+        setTimeout(() => connectToWhatsApp(), 5000);
     }
 }
 
