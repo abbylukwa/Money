@@ -6,7 +6,7 @@ const { PORT } = require("./config");
 
 async function connectToWhatsApp() {
     try {
-        console.log('🔄 Requesting WhatsApp pairing code...');
+        console.log('🔄 Connecting to WhatsApp...');
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
@@ -14,35 +14,27 @@ async function connectToWhatsApp() {
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
-            printQRInTerminal: false,
+            printQRInTerminal: true, // This shows the actual QR code that contains the pairing data
             auth: state,
             browser: Browsers.ubuntu('Chrome')
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        let pairingCodeDisplayed = false;
+        let connected = false;
 
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr && !pairingCodeDisplayed) {
-                pairingCodeDisplayed = true;
-                
-                // This is the actual pairing code from WhatsApp
-                console.log('\n🔐 WHATSAPP PAIRING CODE:');
-                console.log('══════════════════════════════════════');
-                console.log(`📱 ${qr}`);
-                console.log('══════════════════════════════════════');
-                console.log('📱 On your phone:');
-                console.log('1. Open WhatsApp');
-                console.log('2. Go to Settings → Linked Devices → Link a Device');
-                console.log('3. Tap "Pair with code"');
-                console.log('4. Enter the code above');
-                console.log('⏳ Waiting for connection...\n');
+            if (qr && !connected) {
+                console.log('\n📱 TO GET PAIRING CODE:');
+                console.log('1. Scan this QR code with WhatsApp');
+                console.log('2. OR Use WhatsApp Web pairing feature');
+                console.log('3. Wait for connection...\n');
             }
 
             if (connection === 'open') {
+                connected = true;
                 console.log('✅ WhatsApp Connected Successfully!');
                 console.log('🤖 Bot is now ready to receive messages...');
             }
@@ -51,18 +43,9 @@ async function connectToWhatsApp() {
                 console.log('❌ Connection closed');
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
                 if (shouldReconnect) {
-                    console.log('🔄 Reconnecting...');
                     setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
-        });
-
-        sock.ev.on('messages.upsert', async (m) => {
-            const msg = m.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
-
-            const sender = msg.key.remoteJid;
-            console.log(`📩 Message received from: ${sender}`);
         });
 
         return sock;
@@ -74,18 +57,13 @@ async function connectToWhatsApp() {
 }
 
 const web = () => {
-    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - Waiting for Pairing'));
-    app.get('/health', (req, res) => res.json({ 
-        status: 'waiting_for_pairing',
-        timestamp: new Date() 
-    }));
-    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
+    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - Active'));
+    app.listen(PORT, () => console.log(`🌐 Web server on port ${PORT}`));
 }
 
 class WhatsApp {
     async connect() {
-        this.conn = await connectToWhatsApp();
-        return this.conn;
+        return await connectToWhatsApp();
     }
 
     async web() {
