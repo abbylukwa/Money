@@ -1,88 +1,77 @@
 const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
-const qrcode = require("qrcode-terminal");
 const app = express();
 const { PORT } = require("./config");
 
 async function connectToWhatsApp() {
     try {
-        console.log('🔄 Initializing WhatsApp connection for +263775156210...');
+        console.log('🔄 Initializing WhatsApp connection...');
         
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const { version } = await fetchLatestBaileysVersion();
 
-        const conn = makeWASocket({
+        const sock = makeWASocket({
             version,
-            logger: pino({ level: "error" }),
-            browser: Browsers.ubuntu('Chrome'),
+            logger: pino({ level: "silent" }),
+            printQRInTerminal: false,
             auth: state,
-            printQRInTerminal: true,
-            syncFullHistory: false,
-            markOnlineOnConnect: true,
-            generateHighQualityLinkPreview: true,
-            emitOwnEvents: true,
-            defaultQueryTimeoutMs: 60000,
-            connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 10000
+            browser: Browsers.ubuntu('Chrome'),
+            getMessage: async (key) => {
+                return {
+                    conversation: 'hello'
+                }
+            }
         });
 
-        conn.ev.on('creds.update', saveCreds);
+        sock.ev.on('creds.update', saveCreds);
 
         let connectionTimeout;
+        let isConnected = false;
 
-        conn.ev.on('connection.update', (update) => {
-            const { connection, lastDisconnect, qr, isNewLogin, receivedPendingNotifications } = update;
-
-            console.log('🔗 Connection state:', connection);
+        sock.ev.on('connection.update', (update) => {
+            const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
-                console.log('\n🔐 WHATSAPP PAIRING CODE FOR +263775156210:');
+                console.log('\n🔐 WHATSAPP PAIRING CODE:');
                 console.log('══════════════════════════════════════');
-                qrcode.generate(qr, { small: true });
+                console.log(`📱 CODE: ${qr}`);
                 console.log('══════════════════════════════════════');
-                console.log('📱 Open WhatsApp on your phone with number +263775156210');
-                console.log('⚙️ Go to Settings → Linked Devices → Link a Device');
-                console.log('📷 Scan the QR code above to pair this bot');
+                console.log('📱 Open WhatsApp → Settings → Linked Devices → Link a Device');
+                console.log('🔢 Choose "Pair with code" and enter the code above');
                 console.log('⏳ Waiting for connection...\n');
                 
                 clearTimeout(connectionTimeout);
                 connectionTimeout = setTimeout(() => {
-                    console.log('⏰ QR code expired. Restarting connection...');
-                    conn.end(new Error('QR timeout'));
+                    console.log('⏰ Pairing code expired. Restarting...');
+                    sock.end(new Error('Pairing timeout'));
                 }, 60000);
-            }
-
-            if (isNewLogin) {
-                console.log('🔄 New login detected for +263775156210');
-            }
-
-            if (receivedPendingNotifications) {
-                console.log('📥 Pending notifications received');
             }
 
             if (connection === 'close') {
                 clearTimeout(connectionTimeout);
+                isConnected = false;
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-                console.log('❌ Connection closed for +263775156210');
-                console.log('🔄 Reconnecting in 5 seconds...');
+                console.log('❌ Connection closed');
                 if (shouldReconnect) {
+                    console.log('🔄 Reconnecting in 5 seconds...');
                     setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
 
             if (connection === 'open') {
                 clearTimeout(connectionTimeout);
-                console.log('✅ WhatsApp Connected Successfully for +263775156210!');
+                isConnected = true;
+                console.log('✅ WhatsApp Connected Successfully!');
                 console.log('🤖 Bot is now ready to receive messages...');
                 
                 setTimeout(async () => {
                     try {
-                        const botJid = conn.user.id;
-                        await conn.sendMessage(botJid, { 
-                            text: '🤖 Abner Bot Connected!\nNumber: +263775156210\nStatus: Online and Ready' 
+                        const botJid = sock.user.id;
+                        await sock.sendMessage(botJid, { 
+                            text: '🤖 WhatsApp Bot Connected!\nStatus: Online and Ready' 
                         });
-                        console.log('✅ Self-test message sent to +263775156210');
+                        console.log('✅ Self-test message sent');
                     } catch (error) {
                         console.log('❌ Self-test failed:', error.message);
                     }
@@ -90,32 +79,96 @@ async function connectToWhatsApp() {
             }
         });
 
-        conn.ev.on('messages.upsert', async ({ messages, type }) => {
-            console.log('📩 Message received on +263775156210:', type);
-            
-            if (messages[0]) {
-                const message = messages[0];
-                console.log('From:', message.key.remoteJid);
-                console.log('Message type:', Object.keys(message.message || {}));
+        sock.ev.on('messages.upsert', async (m) => {
+            if (!isConnected) {
+                return;
+            }
+
+            const msg = m.messages[0];
+            if (!msg.message || msg.key.fromMe) {
+                return;
+            }
+
+            const sender = msg.key.remoteJid;
+            const messageType = Object.keys(msg.message)[0];
+            let text = '';
+
+            if (messageType === 'conversation') {
+                text = msg.message.conversation;
+            } else if (messageType === 'extendedTextMessage') {
+                text = msg.message.extendedTextMessage.text;
+            }
+
+            console.log(`📩 Message from ${sender}: ${text}`);
+
+            try {
+                if (text) {
+                    const lowercaseText = text.toLowerCase();
+                    
+                    if (lowercaseText === 'ping') {
+                        await sock.sendMessage(sender, { text: '🏓 Pong!' });
+                    } else if (lowercaseText === 'hello' || lowercaseText === 'hi') {
+                        await sock.sendMessage(sender, { 
+                            text: '👋 Hello! I am a WhatsApp Bot. How can I help you?' 
+                        });
+                    } else if (lowercaseText === 'menu') {
+                        await sock.sendMessage(sender, { 
+                            text: '📱 *BOT MENU*\n\n' +
+                            '• ping - Test response\n' +
+                            '• hello - Greeting\n' +
+                            '• menu - Show this menu\n' +
+                            '• status - Bot status\n' +
+                            '• time - Current time'
+                        });
+                    } else if (lowercaseText === 'status') {
+                        await sock.sendMessage(sender, { 
+                            text: `🤖 *BOT STATUS*\n\n` +
+                            `✅ Online: Yes\n` +
+                            `🕒 Time: ${new Date().toLocaleString()}\n` +
+                            `📱 Platform: WhatsApp Web`
+                        });
+                    } else if (lowercaseText === 'time') {
+                        await sock.sendMessage(sender, { 
+                            text: `🕒 Current time: ${new Date().toLocaleString()}`
+                        });
+                    } else {
+                        await sock.sendMessage(sender, { 
+                            text: `✅ Message received: "${text}"\n\nType "menu" to see available commands.`
+                        });
+                    }
+                } else if (messageType === 'imageMessage') {
+                    await sock.sendMessage(sender, { 
+                        text: '📸 Image received! Thank you.'
+                    });
+                } else if (messageType === 'videoMessage') {
+                    await sock.sendMessage(sender, { 
+                        text: '🎥 Video received! Thank you.'
+                    });
+                } else if (messageType === 'audioMessage') {
+                    await sock.sendMessage(sender, { 
+                        text: '🎵 Audio received! Thank you.'
+                    });
+                }
+            } catch (error) {
+                console.log('❌ Error sending message:', error.message);
             }
         });
 
-        return conn;
+        return sock;
 
     } catch (error) {
-        console.error('❌ Connection error for +263775156210:', error);
+        console.error('❌ Connection error:', error);
         setTimeout(() => connectToWhatsApp(), 5000);
     }
 }
 
 const web = () => {
-    app.get('/', (req, res) => res.send('🤖 Abner Bot - Active & Running 2025 - Number: +263775156210'));
+    app.get('/', (req, res) => res.send('🤖 WhatsApp Bot - Active & Running'));
     app.get('/health', (req, res) => res.json({ 
-        status: 'online', 
-        number: '+263775156210',
+        status: 'online',
         timestamp: new Date() 
     }));
-    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT} for +263775156210`));
+    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 }
 
 class WhatsApp {
