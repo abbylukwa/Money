@@ -1,10 +1,18 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const qrcode = require('qrcode-terminal');
 const pino = require("pino");
 const express = require("express");
 const app = express();
 const { PORT } = require("./config");
-const KeepAlive = require("./keepAlive"); // Your KeepAlive class
+const KeepAlive = require("./keepAlive");
+
+// Add these missing imports
+const { 
+    useMultiFileAuthState, 
+    makeWASocket, 
+    fetchLatestBaileysVersion,
+    Browsers,
+    DisconnectReason 
+} = require('@whiskeysockets/baileys');
 
 class WhatsApp {
     constructor() {
@@ -13,6 +21,7 @@ class WhatsApp {
         this.qrDisplayed = false;
         this.connectionAttempts = 0;
         this.maxConnectionAttempts = 5;
+        this.qrTimeout = null;
     }
 
     async connect() {
@@ -28,7 +37,12 @@ class WhatsApp {
                 logger: pino({ level: "silent" }),
                 auth: state,
                 browser: Browsers.ubuntu('Chrome'),
-                printQRInTerminal: false
+                printQRInTerminal: false,
+                // Add these options for better connection
+                markOnlineOnConnect: true,
+                generateHighQualityLinkPreview: true,
+                emitOwnEvents: true,
+                defaultQueryTimeoutMs: 60000,
             });
 
             this.conn.ev.on('creds.update', saveCreds);
@@ -57,10 +71,46 @@ class WhatsApp {
     handleConnectionUpdate(update) {
         const { connection, lastDisconnect, qr } = update;
 
-        if (qr && !this.qrDisplayed) {
+        console.log('🔧 Connection update:', { 
+            connection, 
+            hasQR: !!qr,
+            lastDisconnect: lastDisconnect?.error?.message 
+        });
+
+        if (qr) {
+            this.handleQRCode(qr);
+        }
+
+        if (connection === 'open') {
+            this.handleConnectionOpen();
+        }
+
+        if (connection === 'close') {
+            this.handleConnectionClose(lastDisconnect);
+        }
+    }
+
+    handleQRCode(qr) {
+        if (!this.qrDisplayed) {
             this.qrDisplayed = true;
             console.log('\n📱 SCAN THIS QR CODE WITH WHATSAPP:\n');
-            qrcode.generate(qr, { small: true });
+            
+            // Clear any existing QR timeout
+            if (this.qrTimeout) {
+                clearTimeout(this.qrTimeout);
+            }
+            
+            // Generate QR code with error handling
+            try {
+                qrcode.generate(qr, { small: true }, (qrcode) => {
+                    console.log(qrcode);
+                });
+            } catch (error) {
+                console.log('❌ Error generating QR code:', error);
+                // Fallback: show the QR string for manual scanning
+                console.log('🔤 QR String (manual):', qr);
+            }
+            
             console.log('\n⏳ Waiting for QR scan... (Container will stay alive)');
             
             // Reset connection attempts when QR is shown
@@ -69,65 +119,89 @@ class WhatsApp {
             // Extended timeout for QR scanning
             this.startQRTimeout();
         }
+    }
 
-        if (connection === 'open') {
-            this.isConnected = true;
-            console.log('✅ WhatsApp Connected Successfully!');
-            console.log('🤖 Bot is now ready to receive messages...');
-            
-            // Start web server and keep-alive pings after connection
-            this.startWebServer();
-            this.startKeepAlivePings();
+    handleConnectionOpen() {
+        this.isConnected = true;
+        this.qrDisplayed = false;
+        
+        // Clear QR timeout if connection is successful
+        if (this.qrTimeout) {
+            clearTimeout(this.qrTimeout);
+            this.qrTimeout = null;
         }
+        
+        console.log('✅ WhatsApp Connected Successfully!');
+        console.log('🤖 Bot is now ready to receive messages...');
+        
+        // Start web server and keep-alive pings after connection
+        this.startWebServer();
+        this.startKeepAlivePings();
+    }
 
-        if (connection === 'close') {
-            console.log('❌ Connection closed');
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-            
-            if (shouldReconnect && this.connectionAttempts < this.maxConnectionAttempts) {
-                console.log('🔄 Attempting to reconnect...');
-                this.isConnected = false;
-                this.qrDisplayed = false;
-                setTimeout(() => this.connect(), 5000);
-            } else {
-                console.log('❌ Max reconnection attempts reached or invalid session.');
+    handleConnectionClose(lastDisconnect) {
+        console.log('❌ Connection closed');
+        
+        // Clear QR timeout
+        if (this.qrTimeout) {
+            clearTimeout(this.qrTimeout);
+            this.qrTimeout = null;
+        }
+        
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+        console.log(`🔍 Disconnect reason: ${statusCode}`);
+        console.log(`🔄 Should reconnect: ${shouldReconnect}`);
+
+        if (shouldReconnect && this.connectionAttempts < this.maxConnectionAttempts) {
+            console.log('🔄 Attempting to reconnect...');
+            this.isConnected = false;
+            this.qrDisplayed = false;
+            setTimeout(() => this.connect(), 5000);
+        } else {
+            console.log('❌ Max reconnection attempts reached or invalid session.');
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log('🚪 Logged out from WhatsApp. Please scan QR code again.');
+                // You might want to delete the session folder here
             }
         }
     }
 
     startProcessKeepAlive() {
-        // This keeps the Node.js process from exiting
         console.log('💓 Starting process keep-alive...');
         
         const heartbeat = setInterval(() => {
             if (!this.isConnected) {
                 console.log('⏰ Still waiting for WhatsApp connection...');
+                console.log(`📊 Connection attempts: ${this.connectionAttempts}/${this.maxConnectionAttempts}`);
             } else {
                 clearInterval(heartbeat);
             }
-        }, 30000); // Log every 30 seconds
+        }, 30000);
 
-        // Prevent immediate exit
         process.stdin.resume();
 
-        // Handle container signals gracefully
         process.on('SIGTERM', () => {
-            console.log('📦 Received SIGTERM, but keeping alive for authentication...');
+            console.log('📦 Received SIGTERM, cleaning up...');
+            this.cleanup();
         });
 
         process.on('SIGINT', () => {
-            console.log('📦 Received SIGINT, but keeping alive for authentication...');
+            console.log('📦 Received SIGINT, cleaning up...');
+            this.cleanup();
         });
     }
 
     startQRTimeout() {
         // Give user 3 minutes to scan QR code
-        setTimeout(() => {
+        this.qrTimeout = setTimeout(() => {
             if (!this.isConnected) {
-                console.log('\n⚠️  QR Code timeout approaching...');
-                console.log('🔄 If not scanned, the QR will refresh soon...');
+                console.log('\n⚠️  QR Code expired. Generating new QR code...');
+                this.qrDisplayed = false;
+                // The connection will automatically generate a new QR
             }
-        }, 180000);
+        }, 180000); // 3 minutes
     }
 
     startWebServer() {
@@ -161,11 +235,16 @@ class WhatsApp {
     }
 
     startKeepAlivePings() {
-        // Start pinging your own health endpoint
         const healthUrl = `http://localhost:${PORT}/health`;
-        this.keepAlive.startPinging(healthUrl, 60000); // Ping every minute
-        
+        this.keepAlive.startPinging(healthUrl, 60000);
         console.log('🔔 Keep-alive pings started');
+    }
+
+    cleanup() {
+        if (this.qrTimeout) {
+            clearTimeout(this.qrTimeout);
+        }
+        this.disconnect();
     }
 
     async disconnect() {
