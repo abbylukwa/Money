@@ -7,58 +7,55 @@ const path = require("path");
 const app = express();
 const { PORT } = require("./config");
 
-// Store active sessions
-const activeSessions = new Map();
+// =============================================
+// CONFIGURATION - SET YOUR SESSION ID HERE
+// =============================================
+const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE"; // ← REPLACE THIS WITH YOUR SESSION ID
+// =============================================
 
-// Admin configuration
+// Admin configuration - will be notified when bot starts
 const ADMINS = [
     '263717457592@s.whatsapp.net',
     '263777627210@s.whatsapp.net', 
     '27614159817@s.whatsapp.net'
 ];
 
+// Session configuration
+const SESSION_PATH = `./sessions/${ACTIVE_SESSION_ID}`;
+
 // Auto-reply configuration
 const AUTO_REPLIES = {
-    'hello': '👋 Hello! How can I help you today?',
+    'hello': '👋 Hello! I\'m WhatsBixby bot. How can I help you today?',
     'hi': '👋 Hi there! What can I do for you?',
-    'ping': '🏓 Pong!',
-    '!status': '🤖 WhatsBixby is online and running!',
-    'menu': '📱 *Available Commands:*\n• hello/hi - Greeting\n• ping - Check bot status\n• !status - Bot status\n• menu - Show this menu',
-    'default': '🤖 I am WhatsBixby bot. Use "menu" to see available commands.'
+    'ping': '🏓 Pong! WhatsBixby is online and running!',
+    '!status': '🤖 *WhatsBixby Status*\n\n✅ Online & Active\n📱 Session: ' + ACTIVE_SESSION_ID + '\n⏰ Uptime: ' + new Date().toLocaleString(),
+    'menu': '📱 *WhatsBixby Commands:*\n\n• hello/hi - Greeting\n• ping - Check bot status\n• !status - Detailed status\n• menu - Show this menu\n• owner - Bot owner info',
+    'owner': '👨‍💻 *Bot Owner:*\n\n📧 Contact: mruniquehacker@protonmail.com\n📺 YouTube: @mr_unique_hacker\n💬 Telegram: t.me/mruniquehacker',
+    'default': '🤖 I\'m WhatsBixby, an advanced WhatsApp bot. Type "menu" to see available commands.'
 };
 
 // Process management
 process.on('SIGTERM', () => {
     console.log('🔄 Received SIGTERM, cleaning up...');
-    cleanupSessions();
     process.exit(0);
 });
 
 process.on('SIGINT', () => {
     console.log('🔄 Received SIGINT, shutting down...');
-    cleanupSessions();
     process.exit(0);
 });
 
-function cleanupSessions() {
-    console.log('🧹 Cleaning up active sessions...');
-    activeSessions.forEach((session, sessionId) => {
-        console.log(`Closing session: ${sessionId}`);
-    });
-    activeSessions.clear();
+// Ensure session directory exists
+if (!fs.existsSync(SESSION_PATH)) {
+    fs.mkdirSync(SESSION_PATH, { recursive: true });
+    console.log(`📁 Created session directory: ${SESSION_PATH}`);
 }
 
-// Generate unique session ID
-function generateSessionId() {
-    return 'WB_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-// Initialize WhatsApp connection for a session
-async function initializeWhatsAppSession(sessionId, sessionPath) {
+async function connectToWhatsApp() {
     try {
-        console.log(`🔗 Initializing WhatsApp session: ${sessionId}`);
+        console.log(`🔗 Initializing WhatsApp connection for session: ${ACTIVE_SESSION_ID}`);
         
-        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+        const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
         const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
@@ -72,29 +69,40 @@ async function initializeWhatsAppSession(sessionId, sessionPath) {
         sock.ev.on('creds.update', saveCreds);
 
         let isConnected = false;
+        let connectionStartTime = Date.now();
 
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
 
+            if (qr) {
+                console.log('📱 QR Code generated - scan to connect');
+                qrcode.generate(qr, { small: true });
+            }
+
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
-                console.log(`✅ WhatsApp Connected for session: ${sessionId}`);
-                notifyAdminsOnline(sock, sessionId);
+                const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
+                console.log(`✅ WhatsApp Connected! Session: ${ACTIVE_SESSION_ID}`);
+                console.log(`⏰ Connection established in ${connectionTime} seconds`);
+                
+                // Notify admins
+                notifyAdminsOnline(sock, connectionTime);
             }
 
             if (connection === 'close') {
-                console.log(`❌ Connection closed for session: ${sessionId}`);
+                console.log('❌ Connection closed');
+                isConnected = false;
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
                 if (shouldReconnect) {
-                    setTimeout(() => initializeWhatsAppSession(sessionId, sessionPath), 5000);
+                    console.log('🔄 Attempting to reconnect...');
+                    setTimeout(() => connectToWhatsApp(), 5000);
                 } else {
-                    // Remove session from active sessions
-                    activeSessions.delete(sessionId);
+                    console.log('❌ Authentication failed - need new session');
                 }
             }
         });
 
-        // Message handling
+        // Message handling with auto-reply
         sock.ev.on('messages.upsert', async (m) => {
             if (!isConnected) return;
             
@@ -105,7 +113,7 @@ async function initializeWhatsAppSession(sessionId, sessionPath) {
             const user = message.pushName || 'Unknown';
             const text = getMessageText(message).toLowerCase().trim();
             
-            console.log(`📨 [${sessionId}] Message from ${user}: ${text}`);
+            console.log(`📨 [${ACTIVE_SESSION_ID}] Message from ${user}: ${text}`);
             
             // Auto-reply logic
             if (text) {
@@ -126,26 +134,24 @@ async function initializeWhatsAppSession(sessionId, sessionPath) {
                 
                 try {
                     await sock.sendMessage(jid, { text: reply });
-                    console.log(`✅ [${sessionId}] Auto-reply sent to ${user}`);
+                    console.log(`✅ [${ACTIVE_SESSION_ID}] Auto-reply sent to ${user}`);
+                    
+                    // Also notify admins about the interaction
+                    if (!jid.includes('status@broadcast')) {
+                        notifyAdminsInteraction(sock, user, text);
+                    }
                 } catch (error) {
-                    console.error(`❌ [${sessionId}] Failed to send reply:`, error.message);
+                    console.error(`❌ [${ACTIVE_SESSION_ID}] Failed to send reply:`, error.message);
                 }
             }
-        });
-
-        // Store session
-        activeSessions.set(sessionId, {
-            sock: sock,
-            path: sessionPath,
-            connected: isConnected
         });
 
         return sock;
 
     } catch (error) {
-        console.error(`❌ Error initializing session ${sessionId}:`, error);
-        // Remove failed session
-        activeSessions.delete(sessionId);
+        console.error('❌ Connection error:', error);
+        console.log('🔄 Reconnecting in 5 seconds...');
+        setTimeout(() => connectToWhatsApp(), 5000);
         return null;
     }
 }
@@ -166,8 +172,8 @@ function getMessageText(message) {
     return '[Media Message]';
 }
 
-async function notifyAdminsOnline(sock, sessionId) {
-    const onlineMessage = `🤖 *WhatsBixby Status Update*\n\n✅ New session activated!\n\n*Session ID:* ${sessionId}\n*Connection Time:* ${new Date().toLocaleString()}\n\nBot is now online and ready to receive messages!`;
+async function notifyAdminsOnline(sock, connectionTime) {
+    const onlineMessage = `🤖 *WhatsBixby - Session Activated!*\n\n✅ *Bot is now ONLINE!*\n\n📋 *Session ID:* ${ACTIVE_SESSION_ID}\n⏰ *Connection Time:* ${connectionTime}s\n🕒 *Started At:* ${new Date().toLocaleString()}\n\n📊 *Bot Features:*\n• Auto-reply system\n• Message logging\n• Admin notifications\n• 24/7 availability\n\n_The bot will now automatically respond to messages!_`;
     
     for (const admin of ADMINS) {
         try {
@@ -181,24 +187,18 @@ async function notifyAdminsOnline(sock, sessionId) {
     }
 }
 
-// Load existing sessions on startup
-async function loadExistingSessions() {
-    const sessionsDir = './sessions';
-    if (!fs.existsSync(sessionsDir)) {
-        fs.mkdirSync(sessionsDir, { recursive: true });
-        return;
-    }
-
-    const sessionDirs = fs.readdirSync(sessionsDir);
-    
-    for (const dir of sessionDirs) {
-        if (dir.startsWith('WB_')) {
-            const sessionPath = path.join(sessionsDir, dir);
-            const credsPath = path.join(sessionPath, 'creds.json');
-            
-            if (fs.existsSync(credsPath)) {
-                console.log(`🔄 Loading existing session: ${dir}`);
-                await initializeWhatsAppSession(dir, sessionPath);
+async function notifyAdminsInteraction(sock, user, message) {
+    // Only notify for significant interactions (not every message)
+    if (message.length > 3 && !message.includes('hello') && !message.includes('hi')) {
+        const interactionMessage = `📱 *New User Interaction*\n\n👤 *User:* ${user}\n💬 *Message:* ${message}\n\n🆔 *Session:* ${ACTIVE_SESSION_ID}\n⏰ *Time:* ${new Date().toLocaleTimeString()}`;
+        
+        for (const admin of ADMINS) {
+            try {
+                await sock.sendMessage(admin, { 
+                    text: interactionMessage 
+                });
+            } catch (error) {
+                console.log(`❌ Failed to send interaction notification to ${admin}`);
             }
         }
     }
@@ -214,77 +214,55 @@ const web = () => {
     app.get('/', (req, res) => res.sendFile(__dirname + '/pair.html'));
     app.use('/pair', pairRouter);
     
-    // Session management endpoints
-    app.get('/sessions', (req, res) => {
-        const sessions = Array.from(activeSessions.entries()).map(([id, data]) => ({
-            id,
-            connected: data.connected,
-            path: data.path
-        }));
-        res.json({ sessions });
-    });
+    // Bot status endpoint
+    app.get('/status', (req, res) => res.json({ 
+        status: 'online',
+        bot: 'WhatsBixby 2025',
+        sessionId: ACTIVE_SESSION_ID,
+        activeSession: ACTIVE_SESSION_ID,
+        timestamp: new Date(),
+        features: ['auto-reply', 'admin-notifications', 'session-management']
+    }));
     
     app.get('/health', (req, res) => res.json({ 
         status: 'online',
         bot: 'WhatsBixby 2025',
-        activeSessions: activeSessions.size,
+        session: ACTIVE_SESSION_ID,
         timestamp: new Date() 
     }));
     
     const server = app.listen(PORT, () => {
         console.log(`🌐 Web server running on port ${PORT}`);
-        console.log(`🤖 WhatsBixby Bot initialized`);
-        console.log(`📱 Active sessions: ${activeSessions.size}`);
+        console.log(`🤖 WhatsBixby Bot initialized with session: ${ACTIVE_SESSION_ID}`);
+        console.log(`📱 Admin notifications enabled for ${ADMINS.length} admins`);
+        console.log(`💬 Auto-reply system: ACTIVE`);
     });
     
     process.on('SIGTERM', () => {
         server.close(() => {
             console.log('🌐 Web server closed');
-            cleanupSessions();
             process.exit(0);
         });
     });
 }
 
-class WhatsAppManager {
-    async initialize() {
-        // Load existing sessions
-        await loadExistingSessions();
-        return this;
-    }
-
-    async web() {
-        return web();
-    }
-
-    // Method to add new session
-    async addSession(sessionId, sessionPath) {
-        return await initializeWhatsAppSession(sessionId, sessionPath);
-    }
-
-    // Method to remove session
-    removeSession(sessionId) {
-        if (activeSessions.has(sessionId)) {
-            activeSessions.delete(sessionId);
-            console.log(`🗑️ Session removed: ${sessionId}`);
-            return true;
-        }
-        return false;
-    }
-
-    getActiveSessions() {
-        return Array.from(activeSessions.keys());
-    }
-}
-
 // Initialize and run the bot
 const runBot = async () => {
-    const waManager = new WhatsAppManager();
-    await waManager.initialize();
-    await waManager.web();
+    try {
+        console.log('🚀 Starting WhatsBixby Bot...');
+        console.log(`📋 Active Session: ${ACTIVE_SESSION_ID}`);
+        
+        // Connect to WhatsApp
+        await connectToWhatsApp();
+        
+        // Start web server
+        await web();
+        
+    } catch (error) {
+        console.error('❌ Failed to start bot:', error);
+        process.exit(1);
+    }
 };
 
+// Start the bot
 runBot().catch(console.error);
-
-// Export for use in other files
-module.exports = { WhatsAppManager, generateSessionId };
