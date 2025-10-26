@@ -10,12 +10,14 @@ const router = express.Router();
 // Ensure sessions directory exists
 const SESSIONS_DIR = './sessions';
 if (!fs.existsSync(SESSIONS_DIR)) {
-    fs.existsSync(SESSIONS_DIR, { recursive: true });
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
 // Generate unique session ID
 function generateSessionId() {
-    return 'WB_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substr(2, 9);
+    return `WBX_${timestamp}_${random}`.toUpperCase();
 }
 
 function removeFile(FilePath) {
@@ -93,20 +95,17 @@ router.get('/', async (req, res) => {
                             mimetype: 'application/json',
                             fileName: `whatsbixby_${sessionId}.json`
                         });
-                        console.log("📄 Session file sent successfully");
 
                         // Send welcome message with session ID
                         await WhatsBixby.sendMessage(userJid, {
-                            text: `🤖 *WhatsBixby Session Activated!*\n\n✅ Your WhatsApp is now connected to WhatsBixby bot.\n\n📋 *Session ID:* ${sessionId}\n\n💡 *Features:*\n• Auto-reply to messages\n• Smart responses\n• 24/7 availability\n\n⚠️ Keep your Session ID safe! Don't share it with anyone.\n\n🔧 Need help? Contact support.`
+                            text: `🤖 *WhatsBixby Session Activated!*\n\n✅ Your WhatsApp is now connected to WhatsBixby bot.\n\n📋 *Session ID:* \`${sessionId}\`\n\n💡 *Next Steps:*\n1. Copy the Session ID above\n2. Paste it in the ACTIVE_SESSION_ID constant in index.js\n3. Redeploy your bot\n4. The bot will automatically start receiving messages!\n\n⚠️ *Important:* Keep your Session ID safe and don't share it!`
                         });
-                        console.log("🤖 Welcome message sent successfully");
 
                         // Send setup guide
                         await WhatsBixby.sendMessage(userJid, {
                             image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                            caption: `🎬 *WhatsBixby Setup Complete!*\n\n🚀 Your bot is now ready to use!\n📺 Watch Tutorial: https://youtu.be/-oz_u1iMgf8`
+                            caption: `🎬 *WhatsBixby Setup Complete!*\n\n🚀 Your bot session is ready!\n📺 Watch Tutorial: https://youtu.be/-oz_u1iMgf8\n\nUse your Session ID in the bot code to enable auto-replies.`
                         });
-                        console.log("🎬 Setup guide sent successfully");
 
                         console.log(`✅ Session ${sessionId} setup completed successfully!`);
                         
@@ -145,7 +144,7 @@ router.get('/', async (req, res) => {
                         await res.send({ 
                             code: code,
                             sessionId: sessionId,
-                            message: 'Session created successfully. Use the Session ID in your bot configuration.'
+                            message: 'Session created successfully. Copy the Session ID and use it in your bot configuration.'
                         });
                     }
                 } catch (error) {
