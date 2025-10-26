@@ -7,14 +7,16 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
   <style>
     :root {
-      --primary-color: #2563eb;
+      --primary-color: #6366f1;
       --secondary-color: #ffffff;
-      --accent-color: #f0f0f0;
-      --text-color: #000000;
-      --background-color: #ffffff;
-      --hover-color: #f5f5f5;
-      --border-color: rgba(0, 0, 0, 0.1);
+      --accent-color: #374151;
+      --text-color: #f3f4f6;
+      --background-color: #111827;
+      --hover-color: #1f2937;
+      --border-color: rgba(255, 255, 255, 0.1);
       --success-color: #10b981;
+      --card-bg: #1f2937;
+      --input-bg: #374151;
     }
 
     * {
@@ -25,7 +27,7 @@
 
     body {
       font-family: 'Inter', sans-serif;
-      background: var(--background-color);
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
       color: var(--text-color);
       min-height: 100vh;
       display: flex;
@@ -37,11 +39,12 @@
     .container {
       width: 100%;
       max-width: 450px;
-      background: var(--background-color);
+      background: var(--card-bg);
       border-radius: 16px;
       padding: 25px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
       border: 1px solid var(--border-color);
+      backdrop-filter: blur(10px);
     }
 
     .header {
@@ -53,26 +56,29 @@
       width: 70px;
       height: 70px;
       margin: 0 auto 16px;
-      background: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 28px;
       color: white;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
     }
 
     .title {
       font-size: 24px;
       font-weight: 700;
       margin-bottom: 8px;
-      color: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
     .subtitle {
       font-size: 14px;
-      color: rgba(0, 0, 0, 0.7);
+      color: #9ca3af;
       margin-bottom: 20px;
     }
 
@@ -94,24 +100,26 @@
       font-size: 18px;
       text-decoration: none;
       transition: all 0.3s ease;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
     }
-
-    .social-icons a.youtube { background: #FF0000; }
-    .social-icons a.telegram { background: #0088cc; }
-    .social-icons a.whatsapp { background: #0cfa10; }
-    .social-icons a.github { background: #333; }
 
     .social-icons a:hover {
-      transform: scale(1.1);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      transform: scale(1.1) translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
     }
+
+    .social-icons a.youtube:hover { background: #FF0000; }
+    .social-icons a.telegram:hover { background: #0088cc; }
+    .social-icons a.whatsapp:hover { background: #25D366; }
+    .social-icons a.github:hover { background: #333; }
 
     .toggle-container {
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 20px;
-      background: var(--hover-color);
+      background: var(--input-bg);
       border-radius: 12px;
       padding: 4px;
       border: 1px solid var(--border-color);
@@ -130,8 +138,9 @@
     }
 
     .toggle-option.active {
-      background: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
       color: var(--secondary-color);
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
     }
 
     .toggle-option:not(.active) {
@@ -139,13 +148,13 @@
     }
 
     .toggle-option:hover:not(.active) {
-      background: var(--background-color);
+      background: var(--hover-color);
     }
 
     .copy-btn {
       width: 100%;
       padding: 12px;
-      background: var(--hover-color);
+      background: var(--input-bg);
       border: 1.5px solid var(--border-color);
       border-radius: 12px;
       font-size: 15px;
@@ -156,11 +165,14 @@
       justify-content: center;
       gap: 8px;
       margin-bottom: 12px;
+      color: var(--text-color);
+      transition: all 0.3s ease;
     }
 
     .copy-btn:hover {
-      background: var(--background-color);
+      background: var(--hover-color);
       border-color: var(--primary-color);
+      transform: translateY(-1px);
     }
 
     .input-group {
@@ -177,6 +189,7 @@
       margin-bottom: 8px;
       font-weight: 500;
       font-size: 13px;
+      color: #d1d5db;
     }
 
     .input-field {
@@ -184,21 +197,26 @@
       padding: 12px;
       border: 1.5px solid var(--border-color);
       border-radius: 12px;
-      background: var(--background-color);
+      background: var(--input-bg);
       color: var(--text-color);
       font-size: 15px;
+      transition: all 0.3s ease;
     }
 
     .input-field:focus {
       outline: none;
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .input-field::placeholder {
+      color: #6b7280;
     }
 
     .generate-btn {
       width: 100%;
       padding: 12px;
-      background: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
       border: none;
       border-radius: 12px;
       color: var(--secondary-color);
@@ -210,8 +228,8 @@
     }
 
     .generate-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
     }
 
     .generate-btn.hidden {
@@ -219,7 +237,7 @@
     }
 
     .code-display {
-      background: var(--hover-color);
+      background: var(--input-bg);
       padding: 12px;
       border-radius: 12px;
       text-align: center;
@@ -235,7 +253,7 @@
     }
 
     .qr-display {
-      background: var(--hover-color);
+      background: var(--input-bg);
       padding: 30px;
       border-radius: 12px;
       text-align: center;
@@ -249,12 +267,12 @@
       max-height: 280px;
       margin: 0 auto 20px;
       border-radius: 12px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     }
 
     .qr-instructions {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.7);
+      color: #9ca3af;
       line-height: 1.5;
     }
 
@@ -268,7 +286,7 @@
     }
 
     .error-message {
-      color: #e74c3c;
+      color: #ef4444;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -277,29 +295,56 @@
     }
 
     .session-info {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 16px;
+      padding: 20px;
       margin-bottom: 16px;
       display: none;
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .session-id {
       font-family: 'Courier New', monospace;
-      background: #1e293b;
+      background: #0f172a;
       color: #f1f5f9;
-      padding: 8px 12px;
+      padding: 12px;
       border-radius: 8px;
-      margin: 8px 0;
+      margin: 12px 0;
       word-break: break-all;
       font-size: 14px;
+      border: 1px solid var(--border-color);
     }
 
     .instructions {
       font-size: 13px;
-      color: #64748b;
+      color: #9ca3af;
       line-height: 1.5;
+    }
+
+    .config-box {
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .config-code {
+      font-family: 'Courier New', monospace;
+      background: #0f172a;
+      color: #10b981;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      border: 1px solid var(--border-color);
     }
 
     .loading {
@@ -323,7 +368,21 @@
       text-align: center;
       margin-top: 20px;
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.5);
+      color: #6b7280;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      background: var(--primary-color);
+      color: white;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: bold;
+      margin-right: 8px;
     }
 
     @media (max-width: 480px) {
@@ -354,7 +413,7 @@
     <div class="header">
       <div class="logo"><i class="fas fa-robot"></i></div>
       <h1 class="title">WhatsBixby</h1>
-      <p class="subtitle">Link your WhatsApp device</p>
+      <p class="subtitle">Link your WhatsApp device with unique session ID</p>
       <div class="social-icons">
         <a href="https://www.youtube.com/@mr_unique_hacker?sub_confirmation=1" target="_blank" class="youtube"><i class="fab fa-youtube"></i></a>
         <a href="https://t.me/+hxojkc7kaVViYzdl" target="_blank" class="telegram"><i class="fab fa-telegram-plane"></i></a>
@@ -387,10 +446,28 @@
     </div>
 
     <div class="session-info" id="sessionInfo">
-      <h3 style="margin-bottom: 12px; color: var(--primary-color);">🎉 Session Created Successfully!</h3>
-      <p class="instructions">Your unique session ID:</p>
+      <h3 style="margin-bottom: 16px; color: var(--primary-color); display: flex; align-items: center;">
+        <i class="fas fa-check-circle" style="color: var(--success-color); margin-right: 8px;"></i>
+        Session Created Successfully!
+      </h3>
+      
+      <p class="instructions" style="margin-bottom: 12px;">
+        <span class="step-number">1</span>
+        Your unique session ID:
+      </p>
       <div class="session-id" id="sessionIdDisplay">Loading...</div>
-      <p class="instructions">Use this session ID in your bot configuration to start receiving messages and auto-replies.</p>
+      
+      <p class="instructions" style="margin-bottom: 16px;">
+        <span class="step-number">2</span>
+        Copy this session ID and use it in your bot configuration:
+      </p>
+      
+      <div class="config-box">
+        <div class="config-code" id="configCode">
+// Paste this in your index.js file
+const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
+        </div>
+      </div>
     </div>
 
     <div class="code-display" id="codeDisplay">
@@ -412,8 +489,12 @@
       <i class="fas fa-copy"></i> Copy Session ID
     </button>
 
+    <button class="copy-btn" id="copyConfig" onclick="copyConfig()" style="display: none;">
+      <i class="fas fa-code"></i> Copy Config Code
+    </button>
+
     <div class="footer">
-      <p>© 2025 abbylukwa | WhatsBixby</p>
+      <p>© 2025 abbylukwa | WhatsBixby - Advanced WhatsApp Bot</p>
     </div>
   </div>
 
@@ -451,6 +532,7 @@
         document.getElementById('codeDisplay').style.display = 'flex';
         document.getElementById('sessionInfo').style.display = 'none';
         document.getElementById('copySession').style.display = 'none';
+        document.getElementById('copyConfig').style.display = 'none';
         document.getElementById('copyCode').style.display = 'flex';
       });
     });
@@ -521,8 +603,11 @@
           
           // Show session info
           document.getElementById('sessionIdDisplay').textContent = sessionId;
+          document.getElementById('configCode').textContent = `// Paste this in your index.js file\nconst ACTIVE_SESSION_ID = "${sessionId}";`;
           sessionInfo.style.display = 'block';
           document.getElementById('copySession').style.display = 'flex';
+          document.getElementById('copyConfig').style.display = 'flex';
+          document.getElementById('copyCode').style.display = 'none';
         }
       } catch (error) {
         console.error("Error generating code:", error);
@@ -558,6 +643,20 @@
         }, 2000);
       }).catch(err => {
         console.error("Failed to copy session ID: ", err);
+      });
+    }
+
+    function copyConfig() {
+      const configCode = document.getElementById("configCode").textContent;
+      navigator.clipboard.writeText(configCode).then(() => {
+        const copyBtn = document.getElementById("copyConfig");
+        const originalText = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalText;
+        }, 2000);
+      }).catch(err => {
+        console.error("Failed to copy config: ", err);
       });
     }
   </script>
