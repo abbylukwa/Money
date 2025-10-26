@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Knight Bot - WhatsApp Linker</title>
+  <title>WhatsBixby - WhatsApp Linker</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
   <style>
     :root {
-      --primary-color: #000000;
+      --primary-color: #2563eb;
       --secondary-color: #ffffff;
       --accent-color: #f0f0f0;
       --text-color: #000000;
       --background-color: #ffffff;
       --hover-color: #f5f5f5;
       --border-color: rgba(0, 0, 0, 0.1);
+      --success-color: #10b981;
     }
 
     * {
@@ -105,7 +106,6 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
 
-    /* Toggle Switch Styles */
     .toggle-container {
       display: flex;
       align-items: center;
@@ -141,6 +141,7 @@
     .toggle-option:hover:not(.active) {
       background: var(--background-color);
     }
+
     .copy-btn {
       width: 100%;
       padding: 12px;
@@ -154,6 +155,7 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      margin-bottom: 12px;
     }
 
     .copy-btn:hover {
@@ -190,7 +192,7 @@
     .input-field:focus {
       outline: none;
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
     }
 
     .generate-btn {
@@ -209,7 +211,7 @@
 
     .generate-btn:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
     }
 
     .generate-btn.hidden {
@@ -229,6 +231,7 @@
       align-items: center;
       justify-content: center;
       border: 1.5px solid var(--border-color);
+      word-break: break-all;
     }
 
     .qr-display {
@@ -256,7 +259,7 @@
     }
 
     .success-message {
-      color: #000aff;
+      color: var(--success-color);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -271,6 +274,32 @@
       justify-content: center;
       gap: 8px;
       font-size: 14px;
+    }
+
+    .session-info {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .session-id {
+      font-family: 'Courier New', monospace;
+      background: #1e293b;
+      color: #f1f5f9;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin: 8px 0;
+      word-break: break-all;
+      font-size: 14px;
+    }
+
+    .instructions {
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.5;
     }
 
     .loading {
@@ -324,7 +353,7 @@
   <div class="container">
     <div class="header">
       <div class="logo"><i class="fas fa-robot"></i></div>
-      <h1 class="title">Knight Bot</h1>
+      <h1 class="title">WhatsBixby</h1>
       <p class="subtitle">Link your WhatsApp device</p>
       <div class="social-icons">
         <a href="https://www.youtube.com/@mr_unique_hacker?sub_confirmation=1" target="_blank" class="youtube"><i class="fab fa-youtube"></i></a>
@@ -357,6 +386,13 @@
       <i class="fas fa-spinner"></i>
     </div>
 
+    <div class="session-info" id="sessionInfo">
+      <h3 style="margin-bottom: 12px; color: var(--primary-color);">🎉 Session Created Successfully!</h3>
+      <p class="instructions">Your unique session ID:</p>
+      <div class="session-id" id="sessionIdDisplay">Loading...</div>
+      <p class="instructions">Use this session ID in your bot configuration to start receiving messages and auto-replies.</p>
+    </div>
+
     <div class="code-display" id="codeDisplay">
       Your pair code will appear here
     </div>
@@ -368,18 +404,23 @@
       </div>
     </div>
 
-    <button class="copy-btn" id="copy" onclick="copyCode()">
-      <i class="fas fa-copy"></i> Copy Code
+    <button class="copy-btn" id="copyCode" onclick="copyCode()">
+      <i class="fas fa-copy"></i> Copy Pair Code
+    </button>
+
+    <button class="copy-btn" id="copySession" onclick="copySessionId()" style="display: none;">
+      <i class="fas fa-copy"></i> Copy Session ID
     </button>
 
     <div class="footer">
-      <p>© 2025 abbylukwa | Knight Bot</p>
+      <p>© 2025 abbylukwa | WhatsBixby</p>
     </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.0.0-alpha.1/axios.min.js"></script>
   <script>
     let currentMode = 'pair';
+    let currentSessionId = '';
 
     // Toggle functionality
     document.querySelectorAll('.toggle-option').forEach(option => {
@@ -387,14 +428,11 @@
         const mode = this.dataset.mode;
         if (mode === currentMode) return;
 
-        // Update active state
         document.querySelectorAll('.toggle-option').forEach(opt => opt.classList.remove('active'));
         this.classList.add('active');
 
-        // Update mode
         currentMode = mode;
 
-        // Update button and input visibility
         const submitBtn = document.getElementById('submit');
         const inputGroup = document.getElementById('inputGroup');
 
@@ -405,14 +443,15 @@
         } else {
           submitBtn.classList.add('hidden');
           inputGroup.classList.add('hidden');
-          // Auto-generate QR code when QR mode is selected
           generateQRCode();
         }
 
-        // Clear displays
         document.getElementById('codeDisplay').innerHTML = 'Your pair code will appear here';
         document.getElementById('qrDisplay').style.display = 'none';
         document.getElementById('codeDisplay').style.display = 'flex';
+        document.getElementById('sessionInfo').style.display = 'none';
+        document.getElementById('copySession').style.display = 'none';
+        document.getElementById('copyCode').style.display = 'flex';
       });
     });
 
@@ -453,6 +492,7 @@
       const codeDisplay = document.getElementById("codeDisplay");
       const qrDisplay = document.getElementById("qrDisplay");
       const loadingSpinner = document.getElementById("loading");
+      const sessionInfo = document.getElementById("sessionInfo");
 
       const mobileNumber = mobileNumberInput.value.trim();
       if (!mobileNumber) {
@@ -463,17 +503,27 @@
       loadingSpinner.style.display = "block";
       codeDisplay.innerHTML = '';
       qrDisplay.style.display = 'none';
+      sessionInfo.style.display = 'none';
 
       try {
         const response = await axios(`/pair?number=${mobileNumber.replace(/[^0-9]/g, "")}`);
 
         const code = response.data.code || "Service Unavailable";
+        const sessionId = response.data.sessionId || "No Session ID";
+        
         if (code === "Service Unavailable") {
           codeDisplay.innerHTML = '<div class="error-message"><i class="fas fa-exclamation-circle"></i> Service Unavailable</div>';
+          codeDisplay.style.display = 'flex';
         } else {
-          codeDisplay.innerHTML = `<div class="success-message"><i class="fas fa-check-circle"></i> CODE: ${code}</div>`;
+          currentSessionId = sessionId;
+          codeDisplay.innerHTML = `<div class="success-message"><i class="fas fa-check-circle"></i> PAIR CODE: ${code}</div>`;
+          codeDisplay.style.display = 'flex';
+          
+          // Show session info
+          document.getElementById('sessionIdDisplay').textContent = sessionId;
+          sessionInfo.style.display = 'block';
+          document.getElementById('copySession').style.display = 'flex';
         }
-        codeDisplay.style.display = 'flex';
       } catch (error) {
         console.error("Error generating code:", error);
         codeDisplay.innerHTML = '<div class="error-message"><i class="fas fa-exclamation-circle"></i> Error generating code. Please try again.</div>';
@@ -482,11 +532,12 @@
         loadingSpinner.style.display = "none";
       }
     });
+
     function copyCode() {
       const codeDisplay = document.getElementById("codeDisplay").innerText;
-      const code = codeDisplay.replace('CODE: ', '');
+      const code = codeDisplay.replace('PAIR CODE: ', '');
       navigator.clipboard.writeText(code).then(() => {
-        const copyBtn = document.getElementById("copy");
+        const copyBtn = document.getElementById("copyCode");
         const originalText = copyBtn.innerHTML;
         copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
         setTimeout(() => {
@@ -494,6 +545,19 @@
         }, 2000);
       }).catch(err => {
         console.error("Failed to copy text: ", err);
+      });
+    }
+
+    function copySessionId() {
+      navigator.clipboard.writeText(currentSessionId).then(() => {
+        const copyBtn = document.getElementById("copySession");
+        const originalText = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalText;
+        }, 2000);
+      }).catch(err => {
+        console.error("Failed to copy session ID: ", err);
       });
     }
   </script>
