@@ -1,15 +1,37 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
-const qrcode = require('qrcode-terminal');
-const pino = require("pino");
-const express = require("express");
-const app = express();
-const { PORT } = require("./config");
+import { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
+import qrcode from 'qrcode-terminal';
+import pino from "pino";
+import express from "express";
+import { PORT } from "./config.js";
+import pairRouter from "./pair.js";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
 const ADMINS = [
     '263717457592@s.whatsapp.net',
     '263777627210@s.whatsapp.net', 
     '27614159817@s.whatsapp.net'
 ];
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/pair', pairRouter);
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pair.html'));
+});
+
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'online',
+        bot: 'Knight Bot 2025',
+        timestamp: new Date().toISOString()
+    });
+});
 
 async function connectToWhatsApp() {
     try {
@@ -116,25 +138,31 @@ async function notifyAdminsOnline(sock) {
     }
 }
 
-const web = () => {
-    app.get('/', (req, res) => res.send('🤖 Abners Bot 2025 - Active & Running'));
-    app.get('/health', (req, res) => res.json({ 
-        status: 'online',
-        bot: 'Abners Bot 2025',
-        timestamp: new Date() 
-    }));
-    app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
-}
-
 class WhatsApp {
     async connect() {
         this.conn = await connectToWhatsApp();
         return this.conn;
     }
 
-    async web() {
-        return web();
+    async startWeb() {
+        const server = app.listen(PORT, () => {
+            console.log(`🌐 Web server running on port ${PORT}`);
+        });
+
+        process.on('SIGTERM', () => {
+            server.close(() => {
+                console.log('🌐 Web server closed');
+                process.exit(0);
+            });
+        });
+
+        return server;
     }
 }
 
-module.exports = WhatsApp;
+const bot = new WhatsApp();
+
+bot.connect();
+bot.startWeb();
+
+export default WhatsApp;
