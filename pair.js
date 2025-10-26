@@ -1,8 +1,8 @@
-import express from 'express';
-import fs from 'fs';
-import pino from 'pino';
-import { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
-import pn from 'awesome-phonenumber';
+const express = require('express');
+const fs = require('fs');
+const pino = require('pino');
+const { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pn = require('awesome-phonenumber');
 
 const router = express.Router();
 
@@ -26,7 +26,7 @@ router.get('/', async (req, res) => {
     const phone = pn('+' + num);
     if (!phone.isValid()) {
         if (!res.headersSent) {
-            return res.status(400).send({ code: 'Invalid phone number' });
+            return res.status(400).send({ code: 'Invalid phone number. Please enter your full international number without + or spaces.' });
         }
         return;
     }
@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
             });
 
             KnightBot.ev.on('connection.update', async (update) => {
-                const { connection, lastDisconnect, isNewLogin } = update;
+                const { connection, lastDisconnect, isNewLogin, isOnline } = update;
 
                 if (connection === 'open') {
                     console.log("✅ Connected successfully!");
@@ -81,7 +81,11 @@ router.get('/', async (req, res) => {
                         console.log("🎬 Video guide sent successfully");
 
                         await KnightBot.sendMessage(userJid, {
-                            text: `⚠️ Do not share this file with anybody ⚠️\n\n┌┤✑ Thanks for using Knight Bot\n│└────────────┈ ⳹\n│©2024 Mr Unique Hacker\n└─────────────────┈ ⳹`
+                            text: `⚠️Do not share this file with anybody⚠️\n 
+┌┤✑  Thanks for using Knight Bot
+│└────────────┈ ⳹        
+│©2024 Mr Unique Hacker 
+└─────────────────┈ ⳹\n\n`
                         });
                         console.log("⚠️ Warning message sent successfully");
 
@@ -100,11 +104,15 @@ router.get('/', async (req, res) => {
                     console.log("🔐 New login via pair code");
                 }
 
+                if (isOnline) {
+                    console.log("📶 Client is online");
+                }
+
                 if (connection === 'close') {
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
 
                     if (statusCode === 401) {
-                        console.log("❌ Logged out from WhatsApp");
+                        console.log("❌ Logged out from WhatsApp. Need to generate new pair code.");
                     } else {
                         console.log("🔁 Connection closed — restarting...");
                         initiateSession();
@@ -127,7 +135,7 @@ router.get('/', async (req, res) => {
                 } catch (error) {
                     console.error('Error requesting pairing code:', error);
                     if (!res.headersSent) {
-                        res.status(503).send({ code: 'Failed to get pairing code' });
+                        res.status(503).send({ code: 'Failed to get pairing code. Please check your phone number and try again.' });
                     }
                 }
             }
@@ -154,9 +162,10 @@ process.on('uncaughtException', (err) => {
     if (e.includes("Timed Out")) return;
     if (e.includes("Value not found")) return;
     if (e.includes("Stream Errored")) return;
+    if (e.includes("Stream Errored (restart required)")) return;
     if (e.includes("statusCode: 515")) return;
     if (e.includes("statusCode: 503")) return;
     console.log('Caught exception: ', err);
 });
 
-export default router;
+module.exports = router;
