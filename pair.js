@@ -1,10 +1,22 @@
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 const pino = require('pino');
 const { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pn = require('awesome-phonenumber');
 
 const router = express.Router();
+
+// Ensure sessions directory exists
+const SESSIONS_DIR = './sessions';
+if (!fs.existsSync(SESSIONS_DIR)) {
+    fs.existsSync(SESSIONS_DIR, { recursive: true });
+}
+
+// Generate unique session ID
+function generateSessionId() {
+    return 'WB_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
 
 function removeFile(FilePath) {
     try {
@@ -17,16 +29,23 @@ function removeFile(FilePath) {
 
 router.get('/', async (req, res) => {
     let num = req.query.number;
-    let dirs = './' + (num || `session`);
+    
+    // Generate unique session ID
+    const sessionId = generateSessionId();
+    const sessionDir = path.join(SESSIONS_DIR, sessionId);
 
-    await removeFile(dirs);
+    // Remove existing session directory if it exists
+    await removeFile(sessionDir);
 
     num = num.replace(/[^0-9]/g, '');
 
     const phone = pn('+' + num);
     if (!phone.isValid()) {
         if (!res.headersSent) {
-            return res.status(400).send({ code: 'Invalid phone number. Please enter your full international number without + or spaces.' });
+            return res.status(400).send({ 
+                code: 'Invalid phone number',
+                sessionId: null
+            });
         }
         return;
     }
@@ -34,11 +53,11 @@ router.get('/', async (req, res) => {
     num = phone.getNumber('e164').replace('+', '');
 
     async function initiateSession() {
-        const { state, saveCreds } = await useMultiFileAuthState(dirs);
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
         try {
             const { version } = await fetchLatestBaileysVersion();
-            let KnightBot = makeWASocket({
+            let WhatsBixby = makeWASocket({
                 version,
                 auth: {
                     creds: state.creds,
@@ -56,102 +75,110 @@ router.get('/', async (req, res) => {
                 maxRetries: 5,
             });
 
-            KnightBot.ev.on('connection.update', async (update) => {
+            WhatsBixby.ev.on('connection.update', async (update) => {
                 const { connection, lastDisconnect, isNewLogin, isOnline } = update;
 
                 if (connection === 'open') {
-                    console.log("✅ Connected successfully!");
-                    console.log("📱 Sending session file to user...");
+                    console.log(`✅ Connected successfully for session: ${sessionId}`);
+                    console.log("📱 Sending session info to user...");
                     
                     try {
-                        const sessionKnight = fs.readFileSync(dirs + '/creds.json');
+                        const sessionFile = fs.readFileSync(sessionDir + '/creds.json');
 
                         const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
-                        await KnightBot.sendMessage(userJid, {
-                            document: sessionKnight,
+                        
+                        // Send session file
+                        await WhatsBixby.sendMessage(userJid, {
+                            document: sessionFile,
                             mimetype: 'application/json',
-                            fileName: 'creds.json'
+                            fileName: `whatsbixby_${sessionId}.json`
                         });
                         console.log("📄 Session file sent successfully");
 
-                        await KnightBot.sendMessage(userJid, {
+                        // Send welcome message with session ID
+                        await WhatsBixby.sendMessage(userJid, {
+                            text: `🤖 *WhatsBixby Session Activated!*\n\n✅ Your WhatsApp is now connected to WhatsBixby bot.\n\n📋 *Session ID:* ${sessionId}\n\n💡 *Features:*\n• Auto-reply to messages\n• Smart responses\n• 24/7 availability\n\n⚠️ Keep your Session ID safe! Don't share it with anyone.\n\n🔧 Need help? Contact support.`
+                        });
+                        console.log("🤖 Welcome message sent successfully");
+
+                        // Send setup guide
+                        await WhatsBixby.sendMessage(userJid, {
                             image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                            caption: `🎬 *KnightBot MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/-oz_u1iMgf8`
+                            caption: `🎬 *WhatsBixby Setup Complete!*\n\n🚀 Your bot is now ready to use!\n📺 Watch Tutorial: https://youtu.be/-oz_u1iMgf8`
                         });
-                        console.log("🎬 Video guide sent successfully");
+                        console.log("🎬 Setup guide sent successfully");
 
-                        await KnightBot.sendMessage(userJid, {
-                            text: `⚠️Do not share this file with anybody⚠️\n 
-┌┤✑  Thanks for using Knight Bot
-│└────────────┈ ⳹        
-│©2024 Mr Unique Hacker 
-└─────────────────┈ ⳹\n\n`
-                        });
-                        console.log("⚠️ Warning message sent successfully");
-
-                        console.log("🧹 Cleaning up session...");
-                        await delay(1000);
-                        removeFile(dirs);
-                        console.log("✅ Session cleaned up successfully");
-                        console.log("🎉 Process completed successfully!");
+                        console.log(`✅ Session ${sessionId} setup completed successfully!`);
+                        
                     } catch (error) {
-                        console.error("❌ Error sending messages:", error);
-                        removeFile(dirs);
+                        console.error(`❌ Error sending messages for session ${sessionId}:`, error);
                     }
                 }
 
                 if (isNewLogin) {
-                    console.log("🔐 New login via pair code");
-                }
-
-                if (isOnline) {
-                    console.log("📶 Client is online");
+                    console.log(`🔐 New login via pair code for session: ${sessionId}`);
                 }
 
                 if (connection === 'close') {
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
 
                     if (statusCode === 401) {
-                        console.log("❌ Logged out from WhatsApp. Need to generate new pair code.");
+                        console.log(`❌ Logged out from WhatsApp for session: ${sessionId}`);
+                        // Remove session directory on logout
+                        removeFile(sessionDir);
                     } else {
-                        console.log("🔁 Connection closed — restarting...");
-                        initiateSession();
+                        console.log(`🔁 Connection closed for session ${sessionId} — will auto-reconnect`);
                     }
                 }
             });
 
-            if (!KnightBot.authState.creds.registered) {
+            if (!WhatsBixby.authState.creds.registered) {
                 await delay(3000);
                 num = num.replace(/[^\d+]/g, '');
                 if (num.startsWith('+')) num = num.substring(1);
 
                 try {
-                    let code = await KnightBot.requestPairingCode(num);
+                    let code = await WhatsBixby.requestPairingCode(num);
                     code = code?.match(/.{1,4}/g)?.join('-') || code;
                     if (!res.headersSent) {
-                        console.log({ num, code });
-                        await res.send({ code });
+                        console.log(`📋 Session ${sessionId} - Number: ${num}, Code: ${code}`);
+                        await res.send({ 
+                            code: code,
+                            sessionId: sessionId,
+                            message: 'Session created successfully. Use the Session ID in your bot configuration.'
+                        });
                     }
                 } catch (error) {
                     console.error('Error requesting pairing code:', error);
                     if (!res.headersSent) {
-                        res.status(503).send({ code: 'Failed to get pairing code. Please check your phone number and try again.' });
+                        res.status(503).send({ 
+                            code: 'Service Unavailable',
+                            sessionId: null
+                        });
                     }
+                    // Clean up session directory on error
+                    removeFile(sessionDir);
                 }
             }
 
-            KnightBot.ev.on('creds.update', saveCreds);
+            WhatsBixby.ev.on('creds.update', saveCreds);
         } catch (err) {
             console.error('Error initializing session:', err);
             if (!res.headersSent) {
-                res.status(503).send({ code: 'Service Unavailable' });
+                res.status(503).send({ 
+                    code: 'Service Unavailable',
+                    sessionId: null
+                });
             }
+            // Clean up session directory on error
+            removeFile(sessionDir);
         }
     }
 
     await initiateSession();
 });
 
+// Error handling
 process.on('uncaughtException', (err) => {
     let e = String(err);
     if (e.includes("conflict")) return;
@@ -162,7 +189,6 @@ process.on('uncaughtException', (err) => {
     if (e.includes("Timed Out")) return;
     if (e.includes("Value not found")) return;
     if (e.includes("Stream Errored")) return;
-    if (e.includes("Stream Errored (restart required)")) return;
     if (e.includes("statusCode: 515")) return;
     if (e.includes("statusCode: 503")) return;
     console.log('Caught exception: ', err);
