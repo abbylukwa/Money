@@ -38,7 +38,7 @@
 
     .container {
       width: 100%;
-      max-width: 450px;
+      max-width: 500px;
       background: var(--card-bg);
       border-radius: 16px;
       padding: 25px;
@@ -294,13 +294,12 @@
       font-size: 14px;
     }
 
-    .session-info {
+    .session-section {
       background: var(--input-bg);
       border: 1px solid var(--border-color);
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 16px;
-      display: none;
       animation: slideDown 0.3s ease;
     }
 
@@ -309,42 +308,133 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    .session-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .session-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--primary-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .session-status {
+      background: var(--success-color);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .session-id-container {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .session-id-label {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .session-id {
       font-family: 'Courier New', monospace;
-      background: #0f172a;
-      color: #f1f5f9;
-      padding: 12px;
-      border-radius: 8px;
-      margin: 12px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #10b981;
       word-break: break-all;
-      font-size: 14px;
+      padding-right: 40px;
+    }
+
+    .copy-session-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--primary-color);
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .copy-session-btn:hover {
+      background: #4f46e5;
+      transform: translateY(-50%) scale(1.05);
+    }
+
+    .config-section {
+      background: #0f172a;
       border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .config-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #d1d5db;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .config-code {
+      font-family: 'Courier New', monospace;
+      background: #1e293b;
+      color: #10b981;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      border: 1px solid var(--border-color);
+      line-height: 1.4;
     }
 
     .instructions {
       font-size: 13px;
       color: #9ca3af;
       line-height: 1.5;
+      margin-bottom: 12px;
     }
 
-    .config-box {
-      background: var(--input-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 16px;
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
     }
 
-    .config-code {
-      font-family: 'Courier New', monospace;
-      background: #0f172a;
-      color: #10b981;
-      padding: 12px;
-      border-radius: 8px;
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: var(--primary-color);
+      color: white;
+      border-radius: 50%;
       font-size: 12px;
-      overflow-x: auto;
-      white-space: pre;
-      border: 1px solid var(--border-color);
+      font-weight: bold;
+      margin-right: 8px;
     }
 
     .loading {
@@ -371,20 +461,6 @@
       color: #6b7280;
     }
 
-    .step-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      background: var(--primary-color);
-      color: white;
-      border-radius: 50%;
-      font-size: 12px;
-      font-weight: bold;
-      margin-right: 8px;
-    }
-
     @media (max-width: 480px) {
       .container {
         padding: 20px;
@@ -404,6 +480,10 @@
 
       .qr-display {
         padding: 20px;
+      }
+
+      .session-id {
+        font-size: 14px;
       }
     }
   </style>
@@ -445,31 +525,6 @@
       <i class="fas fa-spinner"></i>
     </div>
 
-    <div class="session-info" id="sessionInfo">
-      <h3 style="margin-bottom: 16px; color: var(--primary-color); display: flex; align-items: center;">
-        <i class="fas fa-check-circle" style="color: var(--success-color); margin-right: 8px;"></i>
-        Session Created Successfully!
-      </h3>
-      
-      <p class="instructions" style="margin-bottom: 12px;">
-        <span class="step-number">1</span>
-        Your unique session ID:
-      </p>
-      <div class="session-id" id="sessionIdDisplay">Loading...</div>
-      
-      <p class="instructions" style="margin-bottom: 16px;">
-        <span class="step-number">2</span>
-        Copy this session ID and use it in your bot configuration:
-      </p>
-      
-      <div class="config-box">
-        <div class="config-code" id="configCode">
-// Paste this in your index.js file
-const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
-        </div>
-      </div>
-    </div>
-
     <div class="code-display" id="codeDisplay">
       Your pair code will appear here
     </div>
@@ -481,16 +536,56 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
       </div>
     </div>
 
+    <!-- Session ID Display Section -->
+    <div class="session-section" id="sessionSection" style="display: none;">
+      <div class="session-header">
+        <div class="session-title">
+          <i class="fas fa-id-card"></i>
+          Your Session ID
+        </div>
+        <div class="session-status">ACTIVE</div>
+      </div>
+
+      <div class="instructions">
+        Your unique session ID has been generated. Use this to configure your bot for automatic message handling.
+      </div>
+
+      <div class="session-id-container">
+        <div class="session-id-label">Session ID</div>
+        <div class="session-id" id="sessionIdDisplay">Loading session ID...</div>
+        <button class="copy-session-btn" onclick="copySessionId()">
+          <i class="fas fa-copy"></i> Copy
+        </button>
+      </div>
+
+      <div class="config-section">
+        <div class="config-title">
+          <i class="fas fa-code"></i>
+          Bot Configuration
+        </div>
+        <div class="instructions">
+          Copy this code and replace the session ID in your <code>index.js</code> file:
+        </div>
+        <div class="config-code" id="configCode">
+// Replace this line in your index.js file
+const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
+        </div>
+        <button class="copy-btn" onclick="copyConfigCode()" style="margin-top: 12px;">
+          <i class="fas fa-copy"></i> Copy Configuration Code
+        </button>
+      </div>
+
+      <div class="instructions" style="margin-top: 16px; padding: 12px; background: #1e293b; border-radius: 8px;">
+        <strong>Next Steps:</strong><br>
+        1. Copy the Session ID above<br>
+        2. Replace the session ID in your bot code<br>
+        3. Redeploy your bot<br>
+        4. The bot will automatically start receiving and replying to messages
+      </div>
+    </div>
+
     <button class="copy-btn" id="copyCode" onclick="copyCode()">
       <i class="fas fa-copy"></i> Copy Pair Code
-    </button>
-
-    <button class="copy-btn" id="copySession" onclick="copySessionId()" style="display: none;">
-      <i class="fas fa-copy"></i> Copy Session ID
-    </button>
-
-    <button class="copy-btn" id="copyConfig" onclick="copyConfig()" style="display: none;">
-      <i class="fas fa-code"></i> Copy Config Code
     </button>
 
     <div class="footer">
@@ -530,9 +625,7 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
         document.getElementById('codeDisplay').innerHTML = 'Your pair code will appear here';
         document.getElementById('qrDisplay').style.display = 'none';
         document.getElementById('codeDisplay').style.display = 'flex';
-        document.getElementById('sessionInfo').style.display = 'none';
-        document.getElementById('copySession').style.display = 'none';
-        document.getElementById('copyConfig').style.display = 'none';
+        document.getElementById('sessionSection').style.display = 'none';
         document.getElementById('copyCode').style.display = 'flex';
       });
     });
@@ -574,7 +667,7 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
       const codeDisplay = document.getElementById("codeDisplay");
       const qrDisplay = document.getElementById("qrDisplay");
       const loadingSpinner = document.getElementById("loading");
-      const sessionInfo = document.getElementById("sessionInfo");
+      const sessionSection = document.getElementById("sessionSection");
 
       const mobileNumber = mobileNumberInput.value.trim();
       if (!mobileNumber) {
@@ -585,7 +678,7 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
       loadingSpinner.style.display = "block";
       codeDisplay.innerHTML = '';
       qrDisplay.style.display = 'none';
-      sessionInfo.style.display = 'none';
+      sessionSection.style.display = 'none';
 
       try {
         const response = await axios(`/pair?number=${mobileNumber.replace(/[^0-9]/g, "")}`);
@@ -601,13 +694,16 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
           codeDisplay.innerHTML = `<div class="success-message"><i class="fas fa-check-circle"></i> PAIR CODE: ${code}</div>`;
           codeDisplay.style.display = 'flex';
           
-          // Show session info
+          // Show session section with the session ID
           document.getElementById('sessionIdDisplay').textContent = sessionId;
-          document.getElementById('configCode').textContent = `// Paste this in your index.js file\nconst ACTIVE_SESSION_ID = "${sessionId}";`;
-          sessionInfo.style.display = 'block';
-          document.getElementById('copySession').style.display = 'flex';
-          document.getElementById('copyConfig').style.display = 'flex';
+          document.getElementById('configCode').textContent = `// Replace this line in your index.js file\nconst ACTIVE_SESSION_ID = "${sessionId}";`;
+          sessionSection.style.display = 'block';
           document.getElementById('copyCode').style.display = 'none';
+          
+          // Auto-scroll to session section
+          setTimeout(() => {
+            sessionSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 500);
         }
       } catch (error) {
         console.error("Error generating code:", error);
@@ -622,12 +718,7 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
       const codeDisplay = document.getElementById("codeDisplay").innerText;
       const code = codeDisplay.replace('PAIR CODE: ', '');
       navigator.clipboard.writeText(code).then(() => {
-        const copyBtn = document.getElementById("copyCode");
-        const originalText = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-        setTimeout(() => {
-          copyBtn.innerHTML = originalText;
-        }, 2000);
+        showCopyFeedback('copyCode');
       }).catch(err => {
         console.error("Failed to copy text: ", err);
       });
@@ -635,30 +726,33 @@ const ACTIVE_SESSION_ID = "YOUR_SESSION_ID_HERE";
 
     function copySessionId() {
       navigator.clipboard.writeText(currentSessionId).then(() => {
-        const copyBtn = document.getElementById("copySession");
-        const originalText = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-        setTimeout(() => {
-          copyBtn.innerHTML = originalText;
-        }, 2000);
+        showCopyFeedback('copySessionBtn');
       }).catch(err => {
         console.error("Failed to copy session ID: ", err);
       });
     }
 
-    function copyConfig() {
+    function copyConfigCode() {
       const configCode = document.getElementById("configCode").textContent;
       navigator.clipboard.writeText(configCode).then(() => {
-        const copyBtn = document.getElementById("copyConfig");
-        const originalText = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-        setTimeout(() => {
-          copyBtn.innerHTML = originalText;
-        }, 2000);
+        showCopyFeedback('copyConfigBtn');
       }).catch(err => {
         console.error("Failed to copy config: ", err);
       });
     }
+
+    function showCopyFeedback(buttonId) {
+      const button = document.getElementById(buttonId) || document.querySelector(`[onclick*="${buttonId}"]`);
+      if (button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        button.style.background = '#10b981';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.style.background = '';
+        }, 2000);
+      }
+    }
   </script>
 </body>
-</html>
+  </html>
