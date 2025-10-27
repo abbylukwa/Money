@@ -13,8 +13,8 @@ const ContentDownloader = require("./content-downloader");
 const Scheduler = require("./scheduler");
 
 const app = express();
-const ACTIVE_SESSION_ID = SESSION_ID;
-const SESSION_PATH = `./sessions/${ACTIVE_SESSION_ID}`;
+let ACTIVE_SESSION_ID = SESSION_ID;
+let SESSION_PATH = `./sessions/${ACTIVE_SESSION_ID}`;
 
 let sock = null;
 let isConnected = false;
@@ -59,8 +59,8 @@ const COMMANDS = {
     'default': '🤖 I\'m Abby WhatsApp Bot. Type "menu" for commands.'
 };
 
-if (!fs.existsSync(SESSION_PATH)) {
-    fs.mkdirSync(SESSION_PATH, { recursive: true });
+if (!fs.existsSync('./sessions')) {
+    fs.mkdirSync('./sessions', { recursive: true });
 }
 
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -72,7 +72,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Abby WhatsApp Bot - Pairing</title>
+        <title>Abby WhatsApp Bot - Session Generator</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -168,17 +168,26 @@ app.get('/', (req, res) => {
             }
             .online { background: #d4edda; color: #155724; }
             .offline { background: #f8d7da; color: #721c24; }
+            .session-id {
+                background: #fff3cd;
+                padding: 15px;
+                border-radius: 10px;
+                margin-top: 15px;
+                word-break: break-all;
+                font-family: monospace;
+                display: none;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="logo">
                 <h1>🤖 Abby WhatsApp Bot</h1>
-                <p>Complete Bot System with Real Implementation</p>
+                <p>Complete Bot System with Session Generation</p>
             </div>
             
             <div class="status ${isConnected ? 'online' : 'offline'}">
-                ${isConnected ? '✅ Bot is ONLINE' : '❌ Bot is OFFLINE'}
+                ${isConnected ? '✅ Bot is ONLINE' : '❌ Bot is OFFLINE - Generate Session'}
             </div>
 
             <form id="pairingForm">
@@ -208,7 +217,15 @@ app.get('/', (req, res) => {
                     2. Go to Settings → Linked Devices<br>
                     3. Tap "Link a Device"<br>
                     4. Enter the pairing code above<br>
-                    5. You'll receive your Session ID via WhatsApp
+                    5. Your Session ID will be generated automatically
+                </div>
+                
+                <div id="sessionInfo" class="session-id">
+                    <strong>🆔 Your Session ID:</strong><br>
+                    <span id="sessionIdDisplay"></span>
+                    <br><br>
+                    <strong>💾 How to use:</strong><br>
+                    Copy this Session ID and use it in your environment variables
                 </div>
             </div>
         </div>
@@ -221,6 +238,8 @@ app.get('/', (req, res) => {
                 const resultDiv = document.getElementById('result');
                 const pairingCode = document.getElementById('pairingCode');
                 const displayNumber = document.getElementById('displayNumber');
+                const sessionInfo = document.getElementById('sessionInfo');
+                const sessionIdDisplay = document.getElementById('sessionIdDisplay');
                 
                 if (!phoneNumber.match(/^\\d{10,15}$/)) {
                     alert('Please enter a valid phone number (10-15 digits)');
@@ -243,7 +262,9 @@ app.get('/', (req, res) => {
                         pairingCode.textContent = data.pairingCode;
                         resultDiv.style.display = 'block';
                         resultDiv.scrollIntoView({ behavior: 'smooth' });
-                        checkConnectionStatus();
+                        
+                        // Start checking for session generation
+                        checkSessionStatus(data.sessionPath);
                     } else {
                         alert('Error: ' + data.message);
                     }
@@ -252,6 +273,29 @@ app.get('/', (req, res) => {
                 }
             });
 
+            async function checkSessionStatus(sessionPath) {
+                try {
+                    const response = await fetch('/check-session?path=' + encodeURIComponent(sessionPath));
+                    const data = await response.json();
+                    
+                    if (data.sessionGenerated) {
+                        document.getElementById('sessionIdDisplay').textContent = data.sessionId;
+                        document.getElementById('sessionInfo').style.display = 'block';
+                        document.querySelector('.status').className = 'status online';
+                        document.querySelector('.status').textContent = '✅ Session Generated - Bot is READY!';
+                        
+                        // Update the page session ID
+                        document.querySelector('input[readonly]').value = data.sessionId;
+                    } else {
+                        // Continue checking every 3 seconds
+                        setTimeout(() => checkSessionStatus(sessionPath), 3000);
+                    }
+                } catch (error) {
+                    console.log('Error checking session:', error);
+                    setTimeout(() => checkSessionStatus(sessionPath), 3000);
+                }
+            }
+
             async function checkConnectionStatus() {
                 try {
                     const response = await fetch('/status');
@@ -259,7 +303,7 @@ app.get('/', (req, res) => {
                     
                     if (data.isConnected) {
                         document.querySelector('.status').className = 'status online';
-                        document.querySelector('.status').textContent = '✅ Bot is ONLINE - You can start pairing!';
+                        document.querySelector('.status').textContent = '✅ Bot is ONLINE';
                     }
                 } catch (error) {
                     console.log('Error checking status:', error);
@@ -273,7 +317,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.post('/generate-pairing', (req, res) => {
+app.post('/generate-pairing', async (req, res) => {
     const { phoneNumber } = req.body;
     
     if (!phoneNumber || !phoneNumber.match(/^\d{10,15}$/)) {
@@ -281,18 +325,50 @@ app.post('/generate-pairing', (req, res) => {
     }
 
     try {
-        const pairingCode = generatePairingCode();
-        currentPairingCode = pairingCode;
+        // Generate unique session ID
+        const sessionId = 'ABBY_' + generateSessionId();
+        const sessionPath = `./sessions/${sessionId}`;
         
-        console.log(`📱 Pairing code generated for ${phoneNumber}: ${pairingCode}`);
+        if (!fs.existsSync(sessionPath)) {
+            fs.mkdirSync(sessionPath, { recursive: true });
+        }
+
+        // Start pairing process
+        const pairingCode = await startPairingProcess(phoneNumber, sessionPath);
         
         res.json({ 
             success: true, 
             pairingCode: pairingCode,
+            sessionId: sessionId,
+            sessionPath: sessionPath,
             message: 'Pairing code generated successfully'
         });
     } catch (error) {
         res.json({ success: false, message: error.message });
+    }
+});
+
+app.get('/check-session', (req, res) => {
+    const sessionPath = req.query.path;
+    
+    try {
+        const credsPath = path.join(sessionPath, 'creds.json');
+        if (fs.existsSync(credsPath)) {
+            const sessionId = path.basename(sessionPath);
+            // Read and encode session data
+            const credsData = fs.readFileSync(credsPath);
+            const base64Session = credsData.toString('base64');
+            
+            res.json({ 
+                sessionGenerated: true, 
+                sessionId: sessionId,
+                base64Session: base64Session
+            });
+        } else {
+            res.json({ sessionGenerated: false });
+        }
+    } catch (error) {
+        res.json({ sessionGenerated: false, error: error.message });
     }
 });
 
@@ -314,14 +390,69 @@ app.get('/health', (req, res) => {
     });
 });
 
-function generatePairingCode() {
+function generateSessionId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-        if (i === 3) code += '-';
+    let result = '';
+    for (let i = 0; i < 12; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    return code;
+    return result;
+}
+
+async function startPairingProcess(phoneNumber, sessionPath) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+            const { version } = await fetchLatestBaileysVersion();
+
+            const tempSock = makeWASocket({
+                version,
+                logger: pino({ level: "silent" }),
+                auth: state,
+                browser: Browsers.ubuntu('Chrome'),
+                printQRInTerminal: false
+            });
+
+            tempSock.ev.on('creds.update', saveCreds);
+
+            // Request pairing code
+            const code = await tempSock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
+            
+            tempSock.ev.on('connection.update', async (update) => {
+                const { connection, lastDisconnect } = update;
+
+                if (connection === 'open') {
+                    console.log(`✅ Pairing successful for session: ${path.basename(sessionPath)}`);
+                    
+                    // Wait a bit for credentials to be saved
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // Close temporary connection
+                    await tempSock.ws.close();
+                    
+                    // Update global session if this is the first connection
+                    if (!ACTIVE_SESSION_ID || ACTIVE_SESSION_ID === SESSION_ID) {
+                        ACTIVE_SESSION_ID = path.basename(sessionPath);
+                        SESSION_PATH = sessionPath;
+                        
+                        // Start the main bot with new session
+                        setTimeout(() => connectToWhatsApp(), 1000);
+                    }
+                }
+
+                if (connection === 'close') {
+                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
+                    if (!shouldReconnect) {
+                        console.log('❌ Pairing failed or was cancelled');
+                    }
+                }
+            });
+
+            resolve(code);
+        } catch (error) {
+            reject(error);
+        }
+    });
 }
 
 async function connectToWhatsApp() {
@@ -336,7 +467,7 @@ async function connectToWhatsApp() {
             logger: pino({ level: "silent" }),
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
-            printQRInTerminal: true,
+            printQRInTerminal: false,
             syncFullHistory: false
         });
 
@@ -348,7 +479,7 @@ async function connectToWhatsApp() {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
-                console.log('📱 QR Code generated');
+                console.log('📱 QR Code generated (should not happen with existing session)');
                 qrcode.generate(qr, { small: true });
             }
 
@@ -467,6 +598,12 @@ async function handleCommand(jid, text) {
                `💬 *Status:* ${safetyStatus.message}`;
     }
     
+    if (text === 'session') {
+        return `🆔 *Your Session ID:* ${ACTIVE_SESSION_ID}\n\n` +
+               `💾 *Session Path:* ${SESSION_PATH}\n` +
+               `🔗 *Status:* ${isConnected ? 'Connected ✅' : 'Disconnected ❌'}`;
+    }
+    
     return COMMANDS[text] || COMMANDS.default;
 }
 
@@ -522,13 +659,14 @@ async function sendSessionIDToOwner() {
     const sessionMessage = `🤖 *Abby WhatsApp Bot - Session Connected!*\n\n` +
                          `✅ *Your bot is now ONLINE!*\n\n` +
                          `🆔 *SESSION ID:* \`${ACTIVE_SESSION_ID}\`\n\n` +
-                         `📋 *How to Deploy:*\n` +
-                         `1. Copy this Session ID: ${ACTIVE_SESSION_ID}\n` +
-                         `2. Go to Railway dashboard\n` +
-                         `3. Set environment variable: SESSION_ID=${ACTIVE_SESSION_ID}\n` +
-                         `4. Redeploy your bot\n\n` +
+                         `📋 *Session Features:*\n` +
+                         `• Auto-reply to messages\n` +
+                         `• Music management\n` +
+                         `• Comedy content posting\n` +
+                         `• Scheduled tasks\n` +
+                         `• File downloads\n\n` +
                          `✨ *Your bot will now stay online 24/7!*\n` +
-                         `💬 It will automatically reply to messages\n` +
+                         `💬 It will automatically reply to admin messages\n` +
                          `🌐 Works even when you're offline\n\n` +
                          `⏰ Connected at: ${new Date().toLocaleString()}`;
 
@@ -545,16 +683,21 @@ async function sendSessionIDToOwner() {
 async function startApplication() {
     try {
         console.log('🚀 Starting Abby WhatsApp Bot...');
-        console.log(`📋 Session ID: ${ACTIVE_SESSION_ID}`);
+        console.log(`📋 Default Session ID: ${ACTIVE_SESSION_ID}`);
         console.log(`🌐 Web interface: http://localhost:${PORT}`);
         console.log(`👑 Admins: ${ADMINS.length} configured`);
         
-        await connectToWhatsApp();
+        // Check if default session exists, otherwise wait for pairing
+        if (fs.existsSync(SESSION_PATH)) {
+            await connectToWhatsApp();
+        } else {
+            console.log('📱 No existing session found. Use the web interface to generate a pairing code.');
+        }
         
         const server = app.listen(PORT, () => {
             console.log(`🌐 Web server running on port ${PORT}`);
             console.log(`📱 Pairing system: READY`);
-            console.log(`💬 Auto-reply system: ACTIVE`);
+            console.log(`💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR SESSION'}`);
             console.log(`🎵 Music Manager: LOADED`);
             console.log(`🎭 Comedy Manager: LOADED`);
             console.log(`📥 Content Downloader: LOADED`);
@@ -564,8 +707,8 @@ async function startApplication() {
             console.log('2. Enter your phone number');
             console.log('3. Get pairing code');
             console.log('4. Link in WhatsApp → Linked Devices');
-            console.log('5. Receive Session ID via WhatsApp');
-            console.log('6. Deploy with Session ID on Railway');
+            console.log('5. Session ID will be generated automatically');
+            console.log('6. Bot will start automatically');
         });
         
         process.on('SIGTERM', () => {
