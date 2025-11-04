@@ -4,12 +4,13 @@ const bodyParser = require("body-parser");
 const fs = require("fs");
 const qrcode = require('qrcode-terminal');
 const pino = require("pino");
-const cron = require('node-cron');
 const { PORT, ADMINS } = require("./config");
-const MusicManager = require("./music-manager");
-const ComedyManager = require("./comedy-manager");
-const ContentDownloader = require("./content-downloader");
-const Scheduler = require("./scheduler");
+
+// Import from plugins folder
+const MusicManager = require("./plugins/group-manager/music-manager");
+const ComedyManager = require("./plugins/group-manager/comedy-manager");
+const ContentDownloader = require("./plugins/group-manager/content-downloader");
+const Scheduler = require("./plugins/group-manager/scheduler");
 
 const app = express();
 
@@ -111,16 +112,6 @@ app.get('/', (req, res) => {
                 margin: 20px 0;
                 text-align: left;
             }
-            .qr-code {
-                background: white;
-                padding: 20px;
-                border-radius: 10px;
-                border: 2px dashed #667eea;
-                margin: 20px 0;
-                font-family: monospace;
-                white-space: pre-wrap;
-                display: none;
-            }
             button {
                 padding: 15px 30px;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -135,11 +126,6 @@ app.get('/', (req, res) => {
             }
             button:hover {
                 transform: translateY(-2px);
-            }
-            button:disabled {
-                background: #ccc;
-                cursor: not-allowed;
-                transform: none;
             }
         </style>
     </head>
@@ -157,59 +143,24 @@ app.get('/', (req, res) => {
             <div class="qr-instructions">
                 <h3>📱 How to Connect:</h3>
                 <ol style="margin: 10px 0 10px 20px;">
-                    <li>Click "Generate QR Code" below</li>
+                    <li>Start the bot (node index.js)</li>
+                    <li>Check terminal for QR code</li>
                     <li>Open WhatsApp on your phone</li>
                     <li>Go to Settings → Linked Devices</li>
                     <li>Tap "Link a Device"</li>
-                    <li>Scan the QR code that appears</li>
+                    <li>Scan the QR code from terminal</li>
                     <li>Wait for connection confirmation</li>
                 </ol>
             </div>
 
-            <button onclick="generateQRCode()" id="qrButton">🔗 Generate QR Code</button>
-            
-            <div id="qrCode" class="qr-code"></div>
-
             <div style="margin-top: 20px; font-size: 14px; color: #666;">
                 <p>💡 The bot will automatically reconnect if disconnected</p>
                 <p>🔄 QR codes expire after 1 minute</p>
+                <p>🔧 Using plugin system for better organization</p>
             </div>
         </div>
 
         <script>
-            async function generateQRCode() {
-                const qrButton = document.getElementById('qrButton');
-                const qrCodeDiv = document.getElementById('qrCode');
-                const statusDiv = document.getElementById('status');
-                
-                qrButton.disabled = true;
-                qrButton.textContent = '🔄 Generating QR Code...';
-                
-                try {
-                    const response = await fetch('/generate-qr', {
-                        method: 'POST'
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        qrCodeDiv.style.display = 'block';
-                        qrCodeDiv.innerHTML = '<strong>📱 Scan this QR Code:</strong><br><br>' + 
-                            data.qrDisplay;
-                        
-                        // Check connection status
-                        checkConnectionStatus();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
-                } catch (error) {
-                    alert('Error generating QR code: ' + error.message);
-                } finally {
-                    qrButton.disabled = false;
-                    qrButton.textContent = '🔗 Generate QR Code';
-                }
-            }
-
             async function checkConnectionStatus() {
                 try {
                     const response = await fetch('/status');
@@ -218,7 +169,6 @@ app.get('/', (req, res) => {
                     if (data.isConnected) {
                         document.getElementById('status').className = 'status online';
                         document.getElementById('status').textContent = '✅ Bot is ONLINE & Connected';
-                        document.getElementById('qrCode').style.display = 'none';
                     } else {
                         setTimeout(checkConnectionStatus, 3000);
                     }
@@ -234,36 +184,6 @@ app.get('/', (req, res) => {
     </body>
     </html>
     `);
-});
-
-app.post('/generate-qr', async (req, res) => {
-    try {
-        // Force new connection with QR code
-        if (sock) {
-            try {
-                await sock.ws.close();
-            } catch (error) {
-                // Ignore close errors
-            }
-        }
-        
-        // Clear existing session to force QR generation
-        if (fs.existsSync('./sessions')) {
-            fs.rmSync('./sessions', { recursive: true, force: true });
-        }
-        
-        setTimeout(async () => {
-            await connectToWhatsApp(true);
-            res.json({ 
-                success: true, 
-                message: 'QR code generation initiated. Check terminal for QR code.',
-                qrDisplay: 'Check your terminal/console for the QR code to scan.'
-            });
-        }, 1000);
-        
-    } catch (error) {
-        res.json({ success: false, message: error.message });
-    }
 });
 
 app.get('/status', (req, res) => {
@@ -282,7 +202,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-async function connectToWhatsApp(forceQR = false) {
+async function connectToWhatsApp() {
     try {
         console.log('🔗 Initializing WhatsApp connection...');
         
@@ -455,27 +375,33 @@ function getMessageText(message) {
 function startScheduledTasks() {
     console.log('⏰ Starting scheduled tasks...');
     
-    cron.schedule('0 6,9,12,15,18,21 * * *', () => {
+    // Music schedule updates
+    scheduler.scheduleTask('0 6,9,12,15,18,21 * * *', () => {
         if (isConnected) musicManager.updateMusicSchedule();
     });
     
-    cron.schedule('0 12,16,20 * * *', () => {
+    // Comedy content
+    scheduler.scheduleTask('0 12,16,20 * * *', () => {
         if (isConnected) comedyManager.postComedianContent('lunch');
     });
     
-    cron.schedule('0 21 * * *', () => {
+    // Chart toppers
+    scheduler.scheduleTask('0 21 * * *', () => {
         if (isConnected) musicManager.postChartToppers();
     });
     
-    cron.schedule('*/30 * * * *', () => {
+    // Motivational quotes
+    scheduler.scheduleTask('*/30 * * * *', () => {
         if (isConnected) comedyManager.sendHypingQuote();
     });
     
-    cron.schedule('0 */2 * * *', () => {
+    // Memes
+    scheduler.scheduleTask('0 */2 * * *', () => {
         if (isConnected) comedyManager.sendMemes();
     });
     
-    cron.schedule('0 2 * * *', () => {
+    // Cleanup
+    scheduler.scheduleTask('0 2 * * *', () => {
         contentDownloader.cleanupOldFiles(24);
     });
     
@@ -515,6 +441,7 @@ async function startApplication() {
         console.log('🔐 Authentication: QR Code Only');
         console.log(`🌐 Web interface: http://localhost:${PORT}`);
         console.log(`👑 Admins: ${ADMINS.length} configured`);
+        console.log(`📁 Plugin system: Active (group-manager)`);
         
         // Always try to connect (will use existing session or generate QR)
         await connectToWhatsApp();
@@ -528,11 +455,10 @@ async function startApplication() {
             console.log(`📥 Content Downloader: LOADED`);
             console.log(`⏰ Scheduler: LOADED`);
             console.log('\n📝 **INSTRUCTIONS:**');
-            console.log('1. Visit http://localhost:3000');
-            console.log('2. Click "Generate QR Code"');
-            console.log('3. Scan QR with WhatsApp → Linked Devices');
-            console.log('4. Bot will connect automatically');
-            console.log('5. Use "menu" command to see available commands');
+            console.log('1. Check terminal for QR code');
+            console.log('2. Scan QR with WhatsApp → Linked Devices');
+            console.log('3. Bot will connect automatically');
+            console.log('4. Use "menu" command to see available commands');
         });
         
         process.on('SIGTERM', () => {
