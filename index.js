@@ -117,14 +117,16 @@ app.get('/', (req, res) => {
                 margin: 20px 0;
                 text-align: left;
             }
-            .qr-code {
-                background: #f8f9fa;
+            .terminal {
+                background: #2d3748;
+                color: #e2e8f0;
                 padding: 20px;
                 border-radius: 10px;
-                margin: 20px 0;
                 font-family: monospace;
-                word-break: break-all;
-                display: none;
+                text-align: left;
+                margin: 20px 0;
+                max-height: 300px;
+                overflow-y: auto;
             }
             button {
                 padding: 15px 30px;
@@ -140,17 +142,6 @@ app.get('/', (req, res) => {
             }
             button:hover {
                 transform: translateY(-2px);
-            }
-            .terminal {
-                background: #2d3748;
-                color: #e2e8f0;
-                padding: 20px;
-                border-radius: 10px;
-                font-family: monospace;
-                text-align: left;
-                margin: 20px 0;
-                max-height: 300px;
-                overflow-y: auto;
             }
         </style>
     </head>
@@ -181,6 +172,8 @@ app.get('/', (req, res) => {
                 <div>🔍 Waiting for QR code generation...</div>
             </div>
 
+            <button onclick="location.reload()">🔄 Refresh Status</button>
+
             <div style="margin-top: 20px; font-size: 14px; color: #666;">
                 <p>💡 The bot will automatically reconnect if disconnected</p>
                 <p>🔄 QR codes expire after 1 minute</p>
@@ -209,25 +202,16 @@ app.get('/', (req, res) => {
                     } else if (data.qrCode) {
                         statusDiv.className = 'status waiting';
                         statusDiv.textContent = '⏳ QR Code Generated - Scan to Connect';
-                        updateTerminal('🔍 QR Code Generated in Terminal - Please check your console!');
+                        updateTerminal('QR Code Generated in Terminal - Please check your console!');
                     } else {
                         statusDiv.className = 'status offline';
                         statusDiv.textContent = '❌ Bot is OFFLINE - Waiting for QR Code';
-                    }
-                    
-                    // Update terminal with latest logs if available
-                    if (data.terminalLogs) {
-                        data.terminalLogs.forEach(log => {
-                            if (!document.querySelector(`[data-log="${log.id}"]`)) {
-                                updateTerminal(log.message);
-                            }
-                        });
                     }
                 } catch (error) {
                     console.log('Error checking status:', error);
                 }
                 
-                setTimeout(checkStatus, 2000);
+                setTimeout(checkStatus, 3000);
             }
 
             // Start checking status
@@ -242,11 +226,6 @@ app.get('/status', (req, res) => {
     res.json({ 
         isConnected: isConnected,
         qrCode: !!qrCode,
-        terminalLogs: [
-            { id: 1, message: `🌐 Web server running on port ${PORT}` },
-            { id: 2, message: `📱 QR Code system: ${qrCode ? 'ACTIVE' : 'WAITING'}` },
-            { id: 3, message: `💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR CONNECTION'}` }
-        ],
         timestamp: new Date().toISOString()
     });
 });
@@ -292,7 +271,6 @@ async function connectToWhatsApp() {
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
             syncFullHistory: false
-            // Removed printQRInTerminal as it's deprecated
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -313,7 +291,6 @@ async function connectToWhatsApp() {
                 // Generate QR code in terminal
                 qrcode.generate(qr, { small: true }, function (qrcode) {
                     console.log(qrcode);
-                    logToTerminal(qrcode);
                 });
                 
                 logToTerminal('========================================');
@@ -334,8 +311,8 @@ async function connectToWhatsApp() {
                 qrCode = null;
                 qrDisplayed = false;
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
-                logToTerminal(`✅ WhatsApp Connected Successfully!`);
-                logToTerminal(`⏰ Connection established in ${connectionTime} seconds`);
+                logToTerminal('✅ WhatsApp Connected Successfully!');
+                logToTerminal('⏰ Connection established in ' + connectionTime + ' seconds');
                 
                 musicManager = new MusicManager(sock, CHANNELS);
                 comedyManager = new ComedyManager(sock, CHANNELS);
@@ -380,26 +357,26 @@ async function connectToWhatsApp() {
             const isAdmin = ADMINS.includes(jid);
             
             if (!isAdmin) {
-                logToTerminal(`🚫 Ignoring message from non-admin: ${user}`);
+                logToTerminal('🚫 Ignoring message from non-admin: ' + user);
                 return;
             }
             
-            logToTerminal(`📨 Message from admin ${user}: ${text}`);
+            logToTerminal('📨 Message from admin ' + user + ': ' + text);
             
             let reply = await handleCommand(jid, text);
             
             try {
                 await sock.sendMessage(jid, { text: reply });
-                logToTerminal(`✅ Reply sent to admin ${user}`);
+                logToTerminal('✅ Reply sent to admin ' + user);
             } catch (error) {
-                logToTerminal(`❌ Failed to send reply: ${error.message}`);
+                logToTerminal('❌ Failed to send reply: ' + error.message);
             }
         });
 
         return sock;
 
     } catch (error) {
-        logToTerminal(`❌ Connection error: ${error.message}`);
+        logToTerminal('❌ Connection error: ' + error.message);
         logToTerminal('🔄 Reconnecting in 5 seconds...');
         setTimeout(() => connectToWhatsApp(), 5000);
         return null;
@@ -441,25 +418,25 @@ async function handleCommand(jid, text) {
         const comedyStats = comedyManager.getStats();
         const downloadStats = contentDownloader.getDownloadStats();
         
-        return `📊 *BOT STATISTICS*\n\n` +
-               `🎵 *Music:* ${musicStats.songsPlayed} songs played\n` +
-               `🎭 *Comedy:* ${comedyStats.comedyPosts} posts\n` +
-               `😂 *Memes:* ${comedyStats.memesSent} sent\n` +
-               `💫 *Quotes:* ${comedyStats.quotesSent} sent\n` +
-               `📥 *Downloads:* ${downloadStats.fileCount} files (${downloadStats.totalSize})\n` +
-               `🔒 *Safety Mode:* ${downloadStats.safetyMode ? 'ON' : 'OFF'}`;
+        return '📊 *BOT STATISTICS*\n\n' +
+               '🎵 *Music:* ' + musicStats.songsPlayed + ' songs played\n' +
+               '🎭 *Comedy:* ' + comedyStats.comedyPosts + ' posts\n' +
+               '😂 *Memes:* ' + comedyStats.memesSent + ' sent\n' +
+               '💫 *Quotes:* ' + comedyStats.quotesSent + ' sent\n' +
+               '📥 *Downloads:* ' + downloadStats.fileCount + ' files (' + downloadStats.totalSize + ')\n' +
+               '🔒 *Safety Mode:* ' + (downloadStats.safetyMode ? 'ON' : 'OFF');
     }
     
     if (text === 'download stats') {
         const downloadStats = contentDownloader.getDownloadStats();
         const safetyStatus = contentDownloader.getSafetyStatus();
         
-        return `📥 *DOWNLOAD SYSTEM*\n\n` +
-               `📁 *Files:* ${downloadStats.fileCount}\n` +
-               `💾 *Size:* ${downloadStats.totalSize}\n` +
-               `📂 *Directory:* ${downloadStats.directory}\n` +
-               `🔒 *Safety Mode:* ${safetyStatus.status}\n` +
-               `💬 *Status:* ${safetyStatus.message}`;
+        return '📥 *DOWNLOAD SYSTEM*\n\n' +
+               '📁 *Files:* ' + downloadStats.fileCount + '\n' +
+               '💾 *Size:* ' + downloadStats.totalSize + '\n' +
+               '📂 *Directory:* ' + downloadStats.directory + '\n' +
+               '🔒 *Safety Mode:* ' + safetyStatus.status + '\n' +
+               '💬 *Status:* ' + safetyStatus.message;
     }
     
     return COMMANDS[text] || COMMANDS.default;
@@ -530,26 +507,26 @@ function startScheduledTasks() {
 async function sendOnlineNotification() {
     if (!sock || !isConnected) return;
     
-    const onlineMessage = `🤖 *Abby WhatsApp Bot - Online!*\n\n` +
-                         `✅ *Your bot is now connected via QR Code!*\n\n` +
-                         `✨ *Features Active:*\n` +
-                         `• Auto-reply to admin messages\n` +
-                         `• Music management\n` +
-                         `• Comedy content posting\n` +
-                         `• Scheduled tasks\n` +
-                         `• File downloads\n\n` +
-                         `🌐 *24/7 Operation:*\n` +
-                         `• Bot stays online continuously\n` +
-                         `• Auto-reconnect if disconnected\n` +
-                         `• Works when you're offline\n\n` +
-                         `⏰ Connected at: ${new Date().toLocaleString()}`;
+    const onlineMessage = '🤖 *Abby WhatsApp Bot - Online!*\n\n' +
+                         '✅ *Your bot is now connected via QR Code!*\n\n' +
+                         '✨ *Features Active:*\n' +
+                         '• Auto-reply to admin messages\n' +
+                         '• Music management\n' +
+                         '• Comedy content posting\n' +
+                         '• Scheduled tasks\n' +
+                         '• File downloads\n\n' +
+                         '🌐 *24/7 Operation:*\n' +
+                         '• Bot stays online continuously\n' +
+                         '• Auto-reconnect if disconnected\n' +
+                         '• Works when you\'re offline\n\n' +
+                         '⏰ Connected at: ' + new Date().toLocaleString();
 
     for (const admin of ADMINS) {
         try {
             await sock.sendMessage(admin, { text: onlineMessage });
-            logToTerminal(`📤 Online notification sent to admin: ${admin}`);
+            logToTerminal('📤 Online notification sent to admin: ' + admin);
         } catch (error) {
-            logToTerminal(`❌ Could not send online message to ${admin}: ${error.message}`);
+            logToTerminal('❌ Could not send online message to ' + admin + ': ' + error.message);
         }
     }
 }
@@ -558,9 +535,9 @@ async function startApplication() {
     try {
         logToTerminal('🚀 Starting Abby WhatsApp Bot...');
         logToTerminal('🔐 Authentication: QR Code Only');
-        logToTerminal(`🌐 Web interface: http://localhost:${PORT}`);
-        logToTerminal(`👑 Admins: ${ADMINS.length} configured`);
-        logToTerminal(`📁 Plugin system: Active (group-manager)`);
+        logToTerminal('🌐 Web interface: http://localhost:' + PORT);
+        logToTerminal('👑 Admins: ' + ADMINS.length + ' configured');
+        logToTerminal('📁 Plugin system: Active (group-manager)');
         
         // Clear any existing sessions to force QR code generation
         if (fs.existsSync('./sessions')) {
@@ -572,7 +549,7 @@ async function startApplication() {
         await connectToWhatsApp();
         
         const server = app.listen(PORT, () => {
-            logToTerminal(`🌐 Web server running on port ${PORT}`);
+            logToTerminal('🌐 Web server running on port ' + PORT);
             logToTerminal('📝 **INSTRUCTIONS:**');
             logToTerminal('1. Check terminal for QR code');
             logToTerminal('2. Scan QR with WhatsApp → Linked Devices');
@@ -599,7 +576,7 @@ async function startApplication() {
         });
 
     } catch (error) {
-        logToTerminal(`❌ Failed to start application: ${error}`);
+        logToTerminal('❌ Failed to start application: ' + error);
         process.exit(1);
     }
 }
