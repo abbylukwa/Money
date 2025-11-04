@@ -294,7 +294,6 @@ async function connectToWhatsApp() {
                 });
                 
                 logToTerminal('========================================');
-                logToTerminal('⏰ QR code valid for 1 minute...\n');
                 
                 // Set timeout to clear QR code after 1 minute
                 setTimeout(() => {
