@@ -1,24 +1,20 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion, DisconnectReason } = require("@whiskeysockets/baileys");
 const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs");
-const path = require("path");
 const qrcode = require('qrcode-terminal');
 const pino = require("pino");
 const cron = require('node-cron');
-const { PORT, SESSION_ID, ADMINS } = require("./config");
+const { PORT, ADMINS } = require("./config");
 const MusicManager = require("./music-manager");
 const ComedyManager = require("./comedy-manager");
 const ContentDownloader = require("./content-downloader");
 const Scheduler = require("./scheduler");
 
 const app = express();
-let ACTIVE_SESSION_ID = SESSION_ID;
-let SESSION_PATH = `./sessions/${ACTIVE_SESSION_ID}`;
 
 let sock = null;
 let isConnected = false;
-let currentPairingCode = null;
 let musicManager = null;
 let comedyManager = null;
 let contentDownloader = new ContentDownloader();
@@ -39,7 +35,6 @@ const COMMANDS = {
 • hello/hi - Greeting
 • ping - Check status
 • menu - Show this menu
-• session - Get session ID
 
 🎵 *Music Commands:*
 • music schedule - Show music schedule
@@ -54,11 +49,10 @@ const COMMANDS = {
 • stats - Bot statistics
 • download stats - Download system status`,
 
-    'session': `🆔 *Your Session ID:* ${ACTIVE_SESSION_ID}`,
-
     'default': '🤖 I\'m Abby WhatsApp Bot. Type "menu" for commands.'
 };
 
+// Ensure sessions directory exists
 if (!fs.existsSync('./sessions')) {
     fs.mkdirSync('./sessions', { recursive: true });
 }
@@ -72,7 +66,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Abby WhatsApp Bot - Session Generator</title>
+        <title>Abby WhatsApp Bot - QR Code Connection</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -92,9 +86,9 @@ app.get('/', (req, res) => {
                 box-shadow: 0 20px 40px rgba(0,0,0,0.1);
                 max-width: 500px;
                 width: 100%;
+                text-align: center;
             }
             .logo {
-                text-align: center;
                 margin-bottom: 30px;
             }
             .logo h1 {
@@ -102,30 +96,33 @@ app.get('/', (req, res) => {
                 font-size: 28px;
                 margin-bottom: 10px;
             }
-            .form-group {
+            .status {
+                padding: 15px;
+                border-radius: 10px;
                 margin-bottom: 20px;
-            }
-            label {
-                display: block;
-                margin-bottom: 8px;
-                color: #333;
                 font-weight: 600;
             }
-            input[type="text"] {
-                width: 100%;
-                padding: 15px;
-                border: 2px solid #e1e5e9;
+            .online { background: #d4edda; color: #155724; }
+            .offline { background: #f8d7da; color: #721c24; }
+            .qr-instructions {
+                background: #e3f2fd;
+                padding: 20px;
                 border-radius: 10px;
-                font-size: 16px;
-                transition: border-color 0.3s;
+                margin: 20px 0;
+                text-align: left;
             }
-            input[type="text"]:focus {
-                outline: none;
-                border-color: #667eea;
+            .qr-code {
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                border: 2px dashed #667eea;
+                margin: 20px 0;
+                font-family: monospace;
+                white-space: pre-wrap;
+                display: none;
             }
             button {
-                width: 100%;
-                padding: 15px;
+                padding: 15px 30px;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 border: none;
@@ -134,48 +131,15 @@ app.get('/', (req, res) => {
                 font-weight: 600;
                 cursor: pointer;
                 transition: transform 0.2s;
+                margin: 10px;
             }
             button:hover {
                 transform: translateY(-2px);
             }
-            .result {
-                margin-top: 20px;
-                padding: 20px;
-                background: #f8f9fa;
-                border-radius: 10px;
-                display: none;
-            }
-            .pairing-code {
-                font-size: 24px;
-                font-weight: bold;
-                text-align: center;
-                color: #667eea;
-                margin: 10px 0;
-            }
-            .instructions {
-                background: #e3f2fd;
-                padding: 15px;
-                border-radius: 10px;
-                margin-top: 15px;
-                font-size: 14px;
-            }
-            .status {
-                padding: 10px;
-                border-radius: 5px;
-                text-align: center;
-                margin-bottom: 15px;
-                font-weight: 600;
-            }
-            .online { background: #d4edda; color: #155724; }
-            .offline { background: #f8d7da; color: #721c24; }
-            .session-id {
-                background: #fff3cd;
-                padding: 15px;
-                border-radius: 10px;
-                margin-top: 15px;
-                word-break: break-all;
-                font-family: monospace;
-                display: none;
+            button:disabled {
+                background: #ccc;
+                cursor: not-allowed;
+                transform: none;
             }
         </style>
     </head>
@@ -183,116 +147,66 @@ app.get('/', (req, res) => {
         <div class="container">
             <div class="logo">
                 <h1>🤖 Abby WhatsApp Bot</h1>
-                <p>Complete Bot System with Session Generation</p>
+                <p>QR Code Authentication System</p>
             </div>
             
-            <div class="status ${isConnected ? 'online' : 'offline'}">
-                ${isConnected ? '✅ Bot is ONLINE' : '❌ Bot is OFFLINE - Generate Session'}
+            <div class="status ${isConnected ? 'online' : 'offline'}" id="status">
+                ${isConnected ? '✅ Bot is ONLINE & Connected' : '❌ Bot is OFFLINE - Scan QR Code'}
             </div>
 
-            <form id="pairingForm">
-                <div class="form-group">
-                    <label for="phoneNumber">📱 Enter Your WhatsApp Number:</label>
-                    <input type="text" id="phoneNumber" name="phoneNumber" 
-                           placeholder="263717457592 (country code + number)" required>
-                    <small style="color: #666;">Format: 263717457592 (no + sign)</small>
-                </div>
-                
-                <button type="submit">🔗 Generate Pairing Code</button>
-            </form>
+            <div class="qr-instructions">
+                <h3>📱 How to Connect:</h3>
+                <ol style="margin: 10px 0 10px 20px;">
+                    <li>Click "Generate QR Code" below</li>
+                    <li>Open WhatsApp on your phone</li>
+                    <li>Go to Settings → Linked Devices</li>
+                    <li>Tap "Link a Device"</li>
+                    <li>Scan the QR code that appears</li>
+                    <li>Wait for connection confirmation</li>
+                </ol>
+            </div>
 
-            <div id="result" class="result">
-                <h3>📋 Pairing Information:</h3>
-                <div class="form-group">
-                    <label>Phone Number:</label>
-                    <input type="text" id="displayNumber" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Pairing Code:</label>
-                    <div class="pairing-code" id="pairingCode">- - - -</div>
-                </div>
-                <div class="instructions">
-                    <strong>📝 How to Pair:</strong><br>
-                    1. Open WhatsApp on your phone<br>
-                    2. Go to Settings → Linked Devices<br>
-                    3. Tap "Link a Device"<br>
-                    4. Enter the pairing code above<br>
-                    5. Your Session ID will be generated automatically
-                </div>
-                
-                <div id="sessionInfo" class="session-id">
-                    <strong>🆔 Your Session ID:</strong><br>
-                    <span id="sessionIdDisplay"></span>
-                    <br><br>
-                    <strong>💾 How to use:</strong><br>
-                    Copy this Session ID and use it in your environment variables
-                </div>
+            <button onclick="generateQRCode()" id="qrButton">🔗 Generate QR Code</button>
+            
+            <div id="qrCode" class="qr-code"></div>
+
+            <div style="margin-top: 20px; font-size: 14px; color: #666;">
+                <p>💡 The bot will automatically reconnect if disconnected</p>
+                <p>🔄 QR codes expire after 1 minute</p>
             </div>
         </div>
 
         <script>
-            document.getElementById('pairingForm').addEventListener('submit', async function(e) {
-                e.preventDefault();
+            async function generateQRCode() {
+                const qrButton = document.getElementById('qrButton');
+                const qrCodeDiv = document.getElementById('qrCode');
+                const statusDiv = document.getElementById('status');
                 
-                const phoneNumber = document.getElementById('phoneNumber').value;
-                const resultDiv = document.getElementById('result');
-                const pairingCode = document.getElementById('pairingCode');
-                const displayNumber = document.getElementById('displayNumber');
-                const sessionInfo = document.getElementById('sessionInfo');
-                const sessionIdDisplay = document.getElementById('sessionIdDisplay');
+                qrButton.disabled = true;
+                qrButton.textContent = '🔄 Generating QR Code...';
                 
-                if (!phoneNumber.match(/^\\d{10,15}$/)) {
-                    alert('Please enter a valid phone number (10-15 digits)');
-                    return;
-                }
-
                 try {
-                    const response = await fetch('/generate-pairing', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ phoneNumber })
+                    const response = await fetch('/generate-qr', {
+                        method: 'POST'
                     });
-
+                    
                     const data = await response.json();
                     
                     if (data.success) {
-                        displayNumber.value = phoneNumber;
-                        pairingCode.textContent = data.pairingCode;
-                        resultDiv.style.display = 'block';
-                        resultDiv.scrollIntoView({ behavior: 'smooth' });
+                        qrCodeDiv.style.display = 'block';
+                        qrCodeDiv.innerHTML = '<strong>📱 Scan this QR Code:</strong><br><br>' + 
+                            data.qrDisplay;
                         
-                        // Start checking for session generation
-                        checkSessionStatus(data.sessionPath);
+                        // Check connection status
+                        checkConnectionStatus();
                     } else {
                         alert('Error: ' + data.message);
                     }
                 } catch (error) {
-                    alert('Error generating pairing code: ' + error.message);
-                }
-            });
-
-            async function checkSessionStatus(sessionPath) {
-                try {
-                    const response = await fetch('/check-session?path=' + encodeURIComponent(sessionPath));
-                    const data = await response.json();
-                    
-                    if (data.sessionGenerated) {
-                        document.getElementById('sessionIdDisplay').textContent = data.sessionId;
-                        document.getElementById('sessionInfo').style.display = 'block';
-                        document.querySelector('.status').className = 'status online';
-                        document.querySelector('.status').textContent = '✅ Session Generated - Bot is READY!';
-                        
-                        // Update the page session ID
-                        document.querySelector('input[readonly]').value = data.sessionId;
-                    } else {
-                        // Continue checking every 3 seconds
-                        setTimeout(() => checkSessionStatus(sessionPath), 3000);
-                    }
-                } catch (error) {
-                    console.log('Error checking session:', error);
-                    setTimeout(() => checkSessionStatus(sessionPath), 3000);
+                    alert('Error generating QR code: ' + error.message);
+                } finally {
+                    qrButton.disabled = false;
+                    qrButton.textContent = '🔗 Generate QR Code';
                 }
             }
 
@@ -302,14 +216,19 @@ app.get('/', (req, res) => {
                     const data = await response.json();
                     
                     if (data.isConnected) {
-                        document.querySelector('.status').className = 'status online';
-                        document.querySelector('.status').textContent = '✅ Bot is ONLINE';
+                        document.getElementById('status').className = 'status online';
+                        document.getElementById('status').textContent = '✅ Bot is ONLINE & Connected';
+                        document.getElementById('qrCode').style.display = 'none';
+                    } else {
+                        setTimeout(checkConnectionStatus, 3000);
                     }
                 } catch (error) {
                     console.log('Error checking status:', error);
+                    setTimeout(checkConnectionStatus, 3000);
                 }
             }
 
+            // Check initial status
             checkConnectionStatus();
         </script>
     </body>
@@ -317,65 +236,39 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.post('/generate-pairing', async (req, res) => {
-    const { phoneNumber } = req.body;
-    
-    if (!phoneNumber || !phoneNumber.match(/^\d{10,15}$/)) {
-        return res.json({ success: false, message: 'Invalid phone number format' });
-    }
-
+app.post('/generate-qr', async (req, res) => {
     try {
-        // Generate unique session ID
-        const sessionId = 'ABBY_' + generateSessionId();
-        const sessionPath = `./sessions/${sessionId}`;
-        
-        if (!fs.existsSync(sessionPath)) {
-            fs.mkdirSync(sessionPath, { recursive: true });
+        // Force new connection with QR code
+        if (sock) {
+            try {
+                await sock.ws.close();
+            } catch (error) {
+                // Ignore close errors
+            }
         }
-
-        // Start pairing process
-        const pairingCode = await startPairingProcess(phoneNumber, sessionPath);
         
-        res.json({ 
-            success: true, 
-            pairingCode: pairingCode,
-            sessionId: sessionId,
-            sessionPath: sessionPath,
-            message: 'Pairing code generated successfully'
-        });
+        // Clear existing session to force QR generation
+        if (fs.existsSync('./sessions')) {
+            fs.rmSync('./sessions', { recursive: true, force: true });
+        }
+        
+        setTimeout(async () => {
+            await connectToWhatsApp(true);
+            res.json({ 
+                success: true, 
+                message: 'QR code generation initiated. Check terminal for QR code.',
+                qrDisplay: 'Check your terminal/console for the QR code to scan.'
+            });
+        }, 1000);
+        
     } catch (error) {
         res.json({ success: false, message: error.message });
-    }
-});
-
-app.get('/check-session', (req, res) => {
-    const sessionPath = req.query.path;
-    
-    try {
-        const credsPath = path.join(sessionPath, 'creds.json');
-        if (fs.existsSync(credsPath)) {
-            const sessionId = path.basename(sessionPath);
-            // Read and encode session data
-            const credsData = fs.readFileSync(credsPath);
-            const base64Session = credsData.toString('base64');
-            
-            res.json({ 
-                sessionGenerated: true, 
-                sessionId: sessionId,
-                base64Session: base64Session
-            });
-        } else {
-            res.json({ sessionGenerated: false });
-        }
-    } catch (error) {
-        res.json({ sessionGenerated: false, error: error.message });
     }
 });
 
 app.get('/status', (req, res) => {
     res.json({ 
         isConnected: isConnected,
-        sessionId: ACTIVE_SESSION_ID,
         timestamp: new Date().toISOString()
     });
 });
@@ -384,82 +277,16 @@ app.get('/health', (req, res) => {
     res.json({ 
         status: 'online', 
         bot: 'Abby WhatsApp Bot',
-        session: ACTIVE_SESSION_ID,
         connected: isConnected,
         timestamp: new Date() 
     });
 });
 
-function generateSessionId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 12; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
-async function startPairingProcess(phoneNumber, sessionPath) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-            const { version } = await fetchLatestBaileysVersion();
-
-            const tempSock = makeWASocket({
-                version,
-                logger: pino({ level: "silent" }),
-                auth: state,
-                browser: Browsers.ubuntu('Chrome'),
-                printQRInTerminal: false
-            });
-
-            tempSock.ev.on('creds.update', saveCreds);
-
-            // Request pairing code
-            const code = await tempSock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
-            
-            tempSock.ev.on('connection.update', async (update) => {
-                const { connection, lastDisconnect } = update;
-
-                if (connection === 'open') {
-                    console.log(`✅ Pairing successful for session: ${path.basename(sessionPath)}`);
-                    
-                    // Wait a bit for credentials to be saved
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    // Close temporary connection
-                    await tempSock.ws.close();
-                    
-                    // Update global session if this is the first connection
-                    if (!ACTIVE_SESSION_ID || ACTIVE_SESSION_ID === SESSION_ID) {
-                        ACTIVE_SESSION_ID = path.basename(sessionPath);
-                        SESSION_PATH = sessionPath;
-                        
-                        // Start the main bot with new session
-                        setTimeout(() => connectToWhatsApp(), 1000);
-                    }
-                }
-
-                if (connection === 'close') {
-                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-                    if (!shouldReconnect) {
-                        console.log('❌ Pairing failed or was cancelled');
-                    }
-                }
-            });
-
-            resolve(code);
-        } catch (error) {
-            reject(error);
-        }
-    });
-}
-
-async function connectToWhatsApp() {
+async function connectToWhatsApp(forceQR = false) {
     try {
-        console.log(`🔗 Initializing WhatsApp connection for session: ${ACTIVE_SESSION_ID}`);
+        console.log('🔗 Initializing WhatsApp connection...');
         
-        const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
+        const { state, saveCreds } = await useMultiFileAuthState('./sessions');
         const { version } = await fetchLatestBaileysVersion();
 
         sock = makeWASocket({
@@ -467,42 +294,50 @@ async function connectToWhatsApp() {
             logger: pino({ level: "silent" }),
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
-            printQRInTerminal: false,
+            printQRInTerminal: true,
             syncFullHistory: false
         });
 
         sock.ev.on('creds.update', saveCreds);
 
         let connectionStartTime = Date.now();
+        let qrGenerated = false;
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr) {
-                console.log('📱 QR Code generated (should not happen with existing session)');
+            if (qr && !qrGenerated) {
+                qrGenerated = true;
+                console.log('\n🔍 SCAN THIS QR CODE WITH WHATSAPP:');
+                console.log('========================================');
                 qrcode.generate(qr, { small: true });
+                console.log('========================================');
+                console.log('⏰ QR code valid for 1 minute...\n');
             }
 
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
-                console.log(`✅ WhatsApp Connected! Session: ${ACTIVE_SESSION_ID}`);
+                console.log(`✅ WhatsApp Connected Successfully!`);
                 console.log(`⏰ Connection established in ${connectionTime} seconds`);
                 
                 musicManager = new MusicManager(sock, CHANNELS);
                 comedyManager = new ComedyManager(sock, CHANNELS);
                 
                 startScheduledTasks();
-                await sendSessionIDToOwner();
+                await sendOnlineNotification();
             }
 
             if (connection === 'close') {
                 console.log('❌ Connection closed');
                 isConnected = false;
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
+                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                
                 if (shouldReconnect) {
-                    console.log('🔄 Attempting to reconnect...');
+                    console.log('🔄 Attempting to reconnect in 5 seconds...');
                     setTimeout(() => connectToWhatsApp(), 5000);
+                } else {
+                    console.log('❌ Device logged out. New QR code will be generated on reconnect.');
                 }
             }
         });
@@ -524,15 +359,15 @@ async function connectToWhatsApp() {
                 return;
             }
             
-            console.log(`📨 [${ACTIVE_SESSION_ID}] Message from admin ${user}: ${text}`);
+            console.log(`📨 Message from admin ${user}: ${text}`);
             
             let reply = await handleCommand(jid, text);
             
             try {
                 await sock.sendMessage(jid, { text: reply });
-                console.log(`✅ [${ACTIVE_SESSION_ID}] Reply sent to admin ${user}`);
+                console.log(`✅ Reply sent to admin ${user}`);
             } catch (error) {
-                console.error(`❌ [${ACTIVE_SESSION_ID}] Failed to send reply:`, error.message);
+                console.error(`❌ Failed to send reply:`, error.message);
             }
         });
 
@@ -598,12 +433,6 @@ async function handleCommand(jid, text) {
                `💬 *Status:* ${safetyStatus.message}`;
     }
     
-    if (text === 'session') {
-        return `🆔 *Your Session ID:* ${ACTIVE_SESSION_ID}\n\n` +
-               `💾 *Session Path:* ${SESSION_PATH}\n` +
-               `🔗 *Status:* ${isConnected ? 'Connected ✅' : 'Disconnected ❌'}`;
-    }
-    
     return COMMANDS[text] || COMMANDS.default;
 }
 
@@ -653,29 +482,29 @@ function startScheduledTasks() {
     console.log('✅ All scheduled tasks started');
 }
 
-async function sendSessionIDToOwner() {
+async function sendOnlineNotification() {
     if (!sock || !isConnected) return;
     
-    const sessionMessage = `🤖 *Abby WhatsApp Bot - Session Connected!*\n\n` +
-                         `✅ *Your bot is now ONLINE!*\n\n` +
-                         `🆔 *SESSION ID:* \`${ACTIVE_SESSION_ID}\`\n\n` +
-                         `📋 *Session Features:*\n` +
-                         `• Auto-reply to messages\n` +
+    const onlineMessage = `🤖 *Abby WhatsApp Bot - Online!*\n\n` +
+                         `✅ *Your bot is now connected via QR Code!*\n\n` +
+                         `✨ *Features Active:*\n` +
+                         `• Auto-reply to admin messages\n` +
                          `• Music management\n` +
                          `• Comedy content posting\n` +
                          `• Scheduled tasks\n` +
                          `• File downloads\n\n` +
-                         `✨ *Your bot will now stay online 24/7!*\n` +
-                         `💬 It will automatically reply to admin messages\n` +
-                         `🌐 Works even when you're offline\n\n` +
+                         `🌐 *24/7 Operation:*\n` +
+                         `• Bot stays online continuously\n` +
+                         `• Auto-reconnect if disconnected\n` +
+                         `• Works when you're offline\n\n` +
                          `⏰ Connected at: ${new Date().toLocaleString()}`;
 
     for (const admin of ADMINS) {
         try {
-            await sock.sendMessage(admin, { text: sessionMessage });
-            console.log(`📤 Session ID sent to admin: ${admin}`);
+            await sock.sendMessage(admin, { text: onlineMessage });
+            console.log(`📤 Online notification sent to admin: ${admin}`);
         } catch (error) {
-            console.log(`❌ Could not send session message to ${admin}:`, error.message);
+            console.log(`❌ Could not send online message to ${admin}:`, error.message);
         }
     }
 }
@@ -683,32 +512,27 @@ async function sendSessionIDToOwner() {
 async function startApplication() {
     try {
         console.log('🚀 Starting Abby WhatsApp Bot...');
-        console.log(`📋 Default Session ID: ${ACTIVE_SESSION_ID}`);
+        console.log('🔐 Authentication: QR Code Only');
         console.log(`🌐 Web interface: http://localhost:${PORT}`);
         console.log(`👑 Admins: ${ADMINS.length} configured`);
         
-        // Check if default session exists, otherwise wait for pairing
-        if (fs.existsSync(SESSION_PATH)) {
-            await connectToWhatsApp();
-        } else {
-            console.log('📱 No existing session found. Use the web interface to generate a pairing code.');
-        }
+        // Always try to connect (will use existing session or generate QR)
+        await connectToWhatsApp();
         
         const server = app.listen(PORT, () => {
             console.log(`🌐 Web server running on port ${PORT}`);
-            console.log(`📱 Pairing system: READY`);
-            console.log(`💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR SESSION'}`);
+            console.log(`📱 QR Code system: READY`);
+            console.log(`💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR CONNECTION'}`);
             console.log(`🎵 Music Manager: LOADED`);
             console.log(`🎭 Comedy Manager: LOADED`);
             console.log(`📥 Content Downloader: LOADED`);
             console.log(`⏰ Scheduler: LOADED`);
             console.log('\n📝 **INSTRUCTIONS:**');
             console.log('1. Visit http://localhost:3000');
-            console.log('2. Enter your phone number');
-            console.log('3. Get pairing code');
-            console.log('4. Link in WhatsApp → Linked Devices');
-            console.log('5. Session ID will be generated automatically');
-            console.log('6. Bot will start automatically');
+            console.log('2. Click "Generate QR Code"');
+            console.log('3. Scan QR with WhatsApp → Linked Devices');
+            console.log('4. Bot will connect automatically');
+            console.log('5. Use "menu" command to see available commands');
         });
         
         process.on('SIGTERM', () => {
