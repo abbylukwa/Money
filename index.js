@@ -62,6 +62,10 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static('.'));
 
+// QR Code state
+let qrCode = null;
+let qrGenerated = false;
+
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -105,12 +109,22 @@ app.get('/', (req, res) => {
             }
             .online { background: #d4edda; color: #155724; }
             .offline { background: #f8d7da; color: #721c24; }
+            .waiting { background: #fff3cd; color: #856404; }
             .qr-instructions {
                 background: #e3f2fd;
                 padding: 20px;
                 border-radius: 10px;
                 margin: 20px 0;
                 text-align: left;
+            }
+            .qr-code {
+                background: #f8f9fa;
+                padding: 20px;
+                border-radius: 10px;
+                margin: 20px 0;
+                font-family: monospace;
+                word-break: break-all;
+                display: none;
             }
             button {
                 padding: 15px 30px;
@@ -127,6 +141,17 @@ app.get('/', (req, res) => {
             button:hover {
                 transform: translateY(-2px);
             }
+            .terminal {
+                background: #2d3748;
+                color: #e2e8f0;
+                padding: 20px;
+                border-radius: 10px;
+                font-family: monospace;
+                text-align: left;
+                margin: 20px 0;
+                max-height: 300px;
+                overflow-y: auto;
+            }
         </style>
     </head>
     <body>
@@ -136,21 +161,24 @@ app.get('/', (req, res) => {
                 <p>QR Code Authentication System</p>
             </div>
             
-            <div class="status ${isConnected ? 'online' : 'offline'}" id="status">
-                ${isConnected ? '✅ Bot is ONLINE & Connected' : '❌ Bot is OFFLINE - Scan QR Code'}
+            <div class="status ${isConnected ? 'online' : (qrCode ? 'waiting' : 'offline')}" id="status">
+                ${isConnected ? '✅ Bot is ONLINE & Connected' : (qrCode ? '⏳ QR Code Generated - Scan to Connect' : '❌ Bot is OFFLINE - Waiting for QR Code')}
             </div>
 
             <div class="qr-instructions">
                 <h3>📱 How to Connect:</h3>
                 <ol style="margin: 10px 0 10px 20px;">
-                    <li>Start the bot (node index.js)</li>
-                    <li>Check terminal for QR code</li>
+                    <li>Check the terminal/console for QR code</li>
                     <li>Open WhatsApp on your phone</li>
                     <li>Go to Settings → Linked Devices</li>
                     <li>Tap "Link a Device"</li>
                     <li>Scan the QR code from terminal</li>
                     <li>Wait for connection confirmation</li>
                 </ol>
+            </div>
+
+            <div class="terminal" id="terminal">
+                <div>🔍 Waiting for QR code generation...</div>
             </div>
 
             <div style="margin-top: 20px; font-size: 14px; color: #666;">
@@ -161,25 +189,49 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
-            async function checkConnectionStatus() {
+            function updateTerminal(message) {
+                const terminal = document.getElementById('terminal');
+                const div = document.createElement('div');
+                div.textContent = message;
+                terminal.appendChild(div);
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            async function checkStatus() {
                 try {
                     const response = await fetch('/status');
                     const data = await response.json();
                     
+                    const statusDiv = document.getElementById('status');
                     if (data.isConnected) {
-                        document.getElementById('status').className = 'status online';
-                        document.getElementById('status').textContent = '✅ Bot is ONLINE & Connected';
+                        statusDiv.className = 'status online';
+                        statusDiv.textContent = '✅ Bot is ONLINE & Connected';
+                    } else if (data.qrCode) {
+                        statusDiv.className = 'status waiting';
+                        statusDiv.textContent = '⏳ QR Code Generated - Scan to Connect';
+                        updateTerminal('🔍 QR Code Generated in Terminal - Please check your console!');
                     } else {
-                        setTimeout(checkConnectionStatus, 3000);
+                        statusDiv.className = 'status offline';
+                        statusDiv.textContent = '❌ Bot is OFFLINE - Waiting for QR Code';
+                    }
+                    
+                    // Update terminal with latest logs if available
+                    if (data.terminalLogs) {
+                        data.terminalLogs.forEach(log => {
+                            if (!document.querySelector(`[data-log="${log.id}"]`)) {
+                                updateTerminal(log.message);
+                            }
+                        });
                     }
                 } catch (error) {
                     console.log('Error checking status:', error);
-                    setTimeout(checkConnectionStatus, 3000);
                 }
+                
+                setTimeout(checkStatus, 2000);
             }
 
-            // Check initial status
-            checkConnectionStatus();
+            // Start checking status
+            checkStatus();
         </script>
     </body>
     </html>
@@ -189,6 +241,12 @@ app.get('/', (req, res) => {
 app.get('/status', (req, res) => {
     res.json({ 
         isConnected: isConnected,
+        qrCode: !!qrCode,
+        terminalLogs: [
+            { id: 1, message: `🌐 Web server running on port ${PORT}` },
+            { id: 2, message: `📱 QR Code system: ${qrCode ? 'ACTIVE' : 'WAITING'}` },
+            { id: 3, message: `💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR CONNECTION'}` }
+        ],
         timestamp: new Date().toISOString()
     });
 });
@@ -198,13 +256,32 @@ app.get('/health', (req, res) => {
         status: 'online', 
         bot: 'Abby WhatsApp Bot',
         connected: isConnected,
+        qrActive: !!qrCode,
         timestamp: new Date() 
     });
 });
 
+// Store terminal logs
+const terminalLogs = [];
+
+function logToTerminal(message) {
+    const logEntry = {
+        id: terminalLogs.length + 1,
+        message: message,
+        timestamp: new Date()
+    };
+    terminalLogs.push(logEntry);
+    console.log(message);
+    
+    // Keep only last 50 logs
+    if (terminalLogs.length > 50) {
+        terminalLogs.shift();
+    }
+}
+
 async function connectToWhatsApp() {
     try {
-        console.log('🔗 Initializing WhatsApp connection...');
+        logToTerminal('🔗 Initializing WhatsApp connection...');
         
         const { state, saveCreds } = await useMultiFileAuthState('./sessions');
         const { version } = await fetchLatestBaileysVersion();
@@ -214,32 +291,51 @@ async function connectToWhatsApp() {
             logger: pino({ level: "silent" }),
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
-            printQRInTerminal: true,
             syncFullHistory: false
+            // Removed printQRInTerminal as it's deprecated
         });
 
         sock.ev.on('creds.update', saveCreds);
 
         let connectionStartTime = Date.now();
-        let qrGenerated = false;
+        let qrDisplayed = false;
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            if (qr && !qrGenerated) {
-                qrGenerated = true;
-                console.log('\n🔍 SCAN THIS QR CODE WITH WHATSAPP:');
-                console.log('========================================');
-                qrcode.generate(qr, { small: true });
-                console.log('========================================');
-                console.log('⏰ QR code valid for 1 minute...\n');
+            // Handle QR Code manually
+            if (qr && !qrDisplayed) {
+                qrCode = qr;
+                qrDisplayed = true;
+                logToTerminal('\n🔍 SCAN THIS QR CODE WITH WHATSAPP:');
+                logToTerminal('========================================');
+                
+                // Generate QR code in terminal
+                qrcode.generate(qr, { small: true }, function (qrcode) {
+                    console.log(qrcode);
+                    logToTerminal(qrcode);
+                });
+                
+                logToTerminal('========================================');
+                logToTerminal('⏰ QR code valid for 1 minute...\n');
+                
+                // Set timeout to clear QR code after 1 minute
+                setTimeout(() => {
+                    if (!isConnected && qrDisplayed) {
+                        logToTerminal('🔄 QR code expired. Generating new one...');
+                        qrDisplayed = false;
+                        qrCode = null;
+                    }
+                }, 60000);
             }
 
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
+                qrCode = null;
+                qrDisplayed = false;
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
-                console.log(`✅ WhatsApp Connected Successfully!`);
-                console.log(`⏰ Connection established in ${connectionTime} seconds`);
+                logToTerminal(`✅ WhatsApp Connected Successfully!`);
+                logToTerminal(`⏰ Connection established in ${connectionTime} seconds`);
                 
                 musicManager = new MusicManager(sock, CHANNELS);
                 comedyManager = new ComedyManager(sock, CHANNELS);
@@ -249,15 +345,24 @@ async function connectToWhatsApp() {
             }
 
             if (connection === 'close') {
-                console.log('❌ Connection closed');
+                logToTerminal('❌ Connection closed');
                 isConnected = false;
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                qrDisplayed = false;
+                qrCode = null;
+                
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 
                 if (shouldReconnect) {
-                    console.log('🔄 Attempting to reconnect in 5 seconds...');
+                    logToTerminal('🔄 Attempting to reconnect in 5 seconds...');
                     setTimeout(() => connectToWhatsApp(), 5000);
                 } else {
-                    console.log('❌ Device logged out. New QR code will be generated on reconnect.');
+                    logToTerminal('❌ Device logged out. Please delete session folder and scan QR again.');
+                    // Clear session to force new QR code
+                    if (fs.existsSync('./sessions')) {
+                        fs.rmSync('./sessions', { recursive: true, force: true });
+                    }
+                    setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
         });
@@ -275,33 +380,37 @@ async function connectToWhatsApp() {
             const isAdmin = ADMINS.includes(jid);
             
             if (!isAdmin) {
-                console.log(`🚫 Ignoring message from non-admin: ${user}`);
+                logToTerminal(`🚫 Ignoring message from non-admin: ${user}`);
                 return;
             }
             
-            console.log(`📨 Message from admin ${user}: ${text}`);
+            logToTerminal(`📨 Message from admin ${user}: ${text}`);
             
             let reply = await handleCommand(jid, text);
             
             try {
                 await sock.sendMessage(jid, { text: reply });
-                console.log(`✅ Reply sent to admin ${user}`);
+                logToTerminal(`✅ Reply sent to admin ${user}`);
             } catch (error) {
-                console.error(`❌ Failed to send reply:`, error.message);
+                logToTerminal(`❌ Failed to send reply: ${error.message}`);
             }
         });
 
         return sock;
 
     } catch (error) {
-        console.error('❌ Connection error:', error);
-        console.log('🔄 Reconnecting in 5 seconds...');
+        logToTerminal(`❌ Connection error: ${error.message}`);
+        logToTerminal('🔄 Reconnecting in 5 seconds...');
         setTimeout(() => connectToWhatsApp(), 5000);
         return null;
     }
 }
 
 async function handleCommand(jid, text) {
+    if (!musicManager || !comedyManager) {
+        return "🔄 Bot is still initializing, please wait...";
+    }
+    
     if (text === 'music schedule') {
         await musicManager.updateMusicSchedule();
         return "🎵 Music schedule updated!";
@@ -373,39 +482,49 @@ function getMessageText(message) {
 }
 
 function startScheduledTasks() {
-    console.log('⏰ Starting scheduled tasks...');
+    logToTerminal('⏰ Starting scheduled tasks...');
     
     // Music schedule updates
     scheduler.scheduleTask('0 6,9,12,15,18,21 * * *', () => {
-        if (isConnected) musicManager.updateMusicSchedule();
-    });
+        if (isConnected && musicManager) {
+            musicManager.updateMusicSchedule();
+        }
+    }, 'Music Schedule Update');
     
     // Comedy content
     scheduler.scheduleTask('0 12,16,20 * * *', () => {
-        if (isConnected) comedyManager.postComedianContent('lunch');
-    });
+        if (isConnected && comedyManager) {
+            comedyManager.postComedianContent('lunch');
+        }
+    }, 'Comedy Content');
     
     // Chart toppers
     scheduler.scheduleTask('0 21 * * *', () => {
-        if (isConnected) musicManager.postChartToppers();
-    });
+        if (isConnected && musicManager) {
+            musicManager.postChartToppers();
+        }
+    }, 'Chart Toppers');
     
     // Motivational quotes
     scheduler.scheduleTask('*/30 * * * *', () => {
-        if (isConnected) comedyManager.sendHypingQuote();
-    });
+        if (isConnected && comedyManager) {
+            comedyManager.sendHypingQuote();
+        }
+    }, 'Motivational Quotes');
     
     // Memes
     scheduler.scheduleTask('0 */2 * * *', () => {
-        if (isConnected) comedyManager.sendMemes();
-    });
+        if (isConnected && comedyManager) {
+            comedyManager.sendMemes();
+        }
+    }, 'Memes');
     
     // Cleanup
     scheduler.scheduleTask('0 2 * * *', () => {
         contentDownloader.cleanupOldFiles(24);
-    });
+    }, 'Cleanup Old Files');
     
-    console.log('✅ All scheduled tasks started');
+    logToTerminal('✅ All scheduled tasks started');
 }
 
 async function sendOnlineNotification() {
@@ -428,61 +547,64 @@ async function sendOnlineNotification() {
     for (const admin of ADMINS) {
         try {
             await sock.sendMessage(admin, { text: onlineMessage });
-            console.log(`📤 Online notification sent to admin: ${admin}`);
+            logToTerminal(`📤 Online notification sent to admin: ${admin}`);
         } catch (error) {
-            console.log(`❌ Could not send online message to ${admin}:`, error.message);
+            logToTerminal(`❌ Could not send online message to ${admin}: ${error.message}`);
         }
     }
 }
 
 async function startApplication() {
     try {
-        console.log('🚀 Starting Abby WhatsApp Bot...');
-        console.log('🔐 Authentication: QR Code Only');
-        console.log(`🌐 Web interface: http://localhost:${PORT}`);
-        console.log(`👑 Admins: ${ADMINS.length} configured`);
-        console.log(`📁 Plugin system: Active (group-manager)`);
+        logToTerminal('🚀 Starting Abby WhatsApp Bot...');
+        logToTerminal('🔐 Authentication: QR Code Only');
+        logToTerminal(`🌐 Web interface: http://localhost:${PORT}`);
+        logToTerminal(`👑 Admins: ${ADMINS.length} configured`);
+        logToTerminal(`📁 Plugin system: Active (group-manager)`);
+        
+        // Clear any existing sessions to force QR code generation
+        if (fs.existsSync('./sessions')) {
+            logToTerminal('🧹 Clearing existing sessions...');
+            fs.rmSync('./sessions', { recursive: true, force: true });
+        }
         
         // Always try to connect (will use existing session or generate QR)
         await connectToWhatsApp();
         
         const server = app.listen(PORT, () => {
-            console.log(`🌐 Web server running on port ${PORT}`);
-            console.log(`📱 QR Code system: READY`);
-            console.log(`💬 Auto-reply system: ${isConnected ? 'ACTIVE' : 'WAITING FOR CONNECTION'}`);
-            console.log(`🎵 Music Manager: LOADED`);
-            console.log(`🎭 Comedy Manager: LOADED`);
-            console.log(`📥 Content Downloader: LOADED`);
-            console.log(`⏰ Scheduler: LOADED`);
-            console.log('\n📝 **INSTRUCTIONS:**');
-            console.log('1. Check terminal for QR code');
-            console.log('2. Scan QR with WhatsApp → Linked Devices');
-            console.log('3. Bot will connect automatically');
-            console.log('4. Use "menu" command to see available commands');
+            logToTerminal(`🌐 Web server running on port ${PORT}`);
+            logToTerminal('📝 **INSTRUCTIONS:**');
+            logToTerminal('1. Check terminal for QR code');
+            logToTerminal('2. Scan QR with WhatsApp → Linked Devices');
+            logToTerminal('3. Bot will connect automatically');
+            logToTerminal('4. Use "menu" command to see available commands');
         });
         
         process.on('SIGTERM', () => {
-            console.log('🔄 Received SIGTERM, cleaning up...');
+            logToTerminal('🔄 Received SIGTERM, cleaning up...');
             scheduler.stopAll();
             server.close(() => {
-                console.log('🌐 Web server closed');
+                logToTerminal('🌐 Web server closed');
                 process.exit(0);
             });
         });
 
         process.on('SIGINT', () => {
-            console.log('🔄 Received SIGINT, shutting down...');
+            logToTerminal('🔄 Received SIGINT, shutting down...');
             scheduler.stopAll();
             server.close(() => {
-                console.log('🌐 Web server closed');
+                logToTerminal('🌐 Web server closed');
                 process.exit(0);
             });
         });
 
     } catch (error) {
-        console.error('❌ Failed to start application:', error);
+        logToTerminal(`❌ Failed to start application: ${error}`);
         process.exit(1);
     }
 }
 
-startApplication().catch(console.error);
+startApplication().catch(error => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+});
