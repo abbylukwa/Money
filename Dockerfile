@@ -9,20 +9,30 @@ RUN apk update && apk add --no-cache \
     make \
     g++ \
     git \
+    curl \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
+# Clone the repository
+RUN git clone https://github.com/abbylukwa/Money.git . && \
+    git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+
 COPY package*.json ./
 
-# Configure Git and install dependencies
-RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/ && \
-    npm install
+# Install dependencies
+RUN npm install
 
+# Create necessary directories
+RUN mkdir -p sessions assets lib/temp/session
+
+# Copy your custom files (if any additional files need to be added)
 COPY . .
 
-RUN mkdir -p lib/temp/session
+EXPOSE 3000
 
-EXPOSE 8080
+# Set environment variables
+ENV BOT_NUMBER=263777627210
+ENV PORT=3000
 
 CMD ["npm", "start"]
