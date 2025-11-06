@@ -1,5 +1,3 @@
-const chalk = require("chalk");
-
 const terminalLogs = [];
 
 function logToTerminal(message) {
@@ -9,7 +7,7 @@ function logToTerminal(message) {
         timestamp: new Date()
     };
     terminalLogs.push(logEntry);
-    console.log(chalk.blue(`[${new Date().toLocaleTimeString()}]`) + ' ' + message);
+    console.log(`[${new Date().toLocaleTimeString()}] ${message}`);
     
     if (terminalLogs.length > 50) {
         terminalLogs.shift();
