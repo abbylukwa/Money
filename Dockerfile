@@ -15,19 +15,16 @@ RUN apk update && apk add --no-cache \
 WORKDIR /app
 
 # Clone the repository
-RUN git clone https://github.com/abbylukwa/Money.git . && \
-    git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+RUN git clone https://github.com/abbylukwa/Money.git .
 
+# Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies with legacy peer deps to resolve conflicts
+RUN npm install --legacy-peer-deps
 
 # Create necessary directories
 RUN mkdir -p sessions assets lib/temp/session
-
-# Copy your custom files (if any additional files need to be added)
-COPY . .
 
 EXPOSE 3000
 
