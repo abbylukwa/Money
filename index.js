@@ -1,13 +1,15 @@
 const { PORT, ADMINS, MONGODB_URI, BOT_NUMBER } = require("./config");
-const chalk = require("chalk");
-const figlet = require("figlet");
 const { connectToWhatsApp } = require("./client");
 const { logToTerminal } = require("./print");
 
-// Display banner
-console.log(chalk.yellow(figlet.textSync('KNIGHT BOT', { horizontalLayout: 'full' })));
-console.log(chalk.cyan('🚀 Advanced WhatsApp Bot with Pairing Code'));
-console.log(chalk.green('=============================================\n'));
+// Display banner without chalk
+console.log('\x1b[33m%s\x1b[0m', `
+╦  ╦╦╔═╗╔╗╔╔╦╗╦ ╦  ╔╗╔╔═╗╦ ╦
+║  ║║║ ║║║║ ║ ╠═╣  ║║║║╣ ║ ║
+╩═╝╩╩╚═╝╝╚╝ ╩ ╩ ╩  ╝╚╝╚═╝╚═╝
+`);
+console.log('🚀 Advanced WhatsApp Bot with Pairing Code');
+console.log('=============================================\n');
 
 // Start the application
 async function startApplication() {
@@ -46,6 +48,6 @@ async function startApplication() {
 
 // Start the bot
 startApplication().catch(error => {
-    console.error(chalk.red('💥 Fatal error:'), error);
+    console.error('💥 Fatal error:', error);
     process.exit(1);
 });
