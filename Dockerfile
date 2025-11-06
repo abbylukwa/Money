@@ -20,7 +20,10 @@ RUN git clone https://github.com/abbylukwa/Money.git .
 # Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies with legacy peer deps to resolve conflicts
+# Install specific compatible version of chalk
+RUN npm install chalk@4.1.2 --legacy-peer-deps
+
+# Install other dependencies
 RUN npm install --legacy-peer-deps
 
 # Create necessary directories and dummy A.jpg file
