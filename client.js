@@ -8,6 +8,10 @@ const { logToTerminal } = require("./print");
 let sock = null;
 let isConnected = false;
 let pairingCode = null;
+let connectionResolve = null;
+let connectionPromise = new Promise((resolve) => {
+    connectionResolve = resolve;
+});
 
 async function connectToWhatsApp() {
     try {
@@ -44,6 +48,7 @@ async function connectToWhatsApp() {
                 logToTerminal('🎯 ================================');
                 logToTerminal('📱 Use this REAL code in WhatsApp');
                 logToTerminal('📱 This will connect your actual WhatsApp account');
+                logToTerminal('⏳ Waiting for you to enter the pairing code in WhatsApp...');
                 logToTerminal('====================================\n');
                 
             } catch (error) {
@@ -52,6 +57,8 @@ async function connectToWhatsApp() {
                 setTimeout(() => connectToWhatsApp(), 10000);
                 return;
             }
+        } else {
+            logToTerminal('✅ Using existing session, no pairing code needed');
         }
 
         // Connection event handler
@@ -64,12 +71,18 @@ async function connectToWhatsApp() {
                 pairingCode = null;
                 
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
-                logToTerminal('🎉 WhatsApp Connected Successfully!');
+                logToTerminal('\n🎉 WhatsApp Connected Successfully!');
                 logToTerminal(`⏰ Connection established in ${connectionTime} seconds`);
                 
                 const user = sock.user;
                 logToTerminal(`👤 Connected as: ${user.name || user.id}`);
                 logToTerminal(`📱 Phone: ${user.id}`);
+                
+                // Resolve the connection promise
+                if (connectionResolve) {
+                    connectionResolve(sock);
+                    connectionResolve = null;
+                }
                 
                 await sendOnlineNotification();
             }
@@ -172,4 +185,8 @@ function getConnectionStatus() {
     return { isConnected, pairingCode };
 }
 
-module.exports = { connectToWhatsApp, getConnectionStatus };
+function waitForConnection() {
+    return connectionPromise;
+}
+
+module.exports = { connectToWhatsApp, getConnectionStatus, waitForConnection };
