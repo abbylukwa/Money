@@ -65,7 +65,7 @@ global.fgyt = 'https://youtube.com/@BobbyX208';
 global.fgpyp = 'https://youtube.com/@BobbyX208';
 global.fglog = 'https://i.ibb.co/G2dh9cB/qasim.jpg';
 
-// Remove the problematic file read - set thumb to null or empty
+// Remove problematic file read
 global.thumb = null;
 
 global.wait = '⏳';
