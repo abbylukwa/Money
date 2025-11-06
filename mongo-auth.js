@@ -1,15 +1,59 @@
-import { Binary } from 'mongodb';
-import { initAuthCreds } from 'baileys-pro';
-import proto from 'baileys-pro';
-import mongoConnectionManager from './mongo-connection.js';
+const { Binary } = require('mongodb');
+const { initAuthCreds } = require('baileys-pro');
+const proto = require('baileys-pro');
+const mongoConnectionManager = require('./mongo-connection.js');
 
-/**
- * Stores Baileys authentication state in MongoDB
- * @param {string} uri MongoDB connection URI
- * @param {string} dbName Database name
- * @returns {Promise<{state: AuthenticationState, saveCreds: () => Promise<void>, closeConnection: () => Promise<void>}>}
- */
-export const useMongoDBAuthState = async (uri, dbName = 'baileys-auth') => {
+function convertBinaryToBuffer(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      obj[i] = convertBinaryToBuffer(obj[i]);
+    }
+    return obj;
+  }
+  
+  if (obj._bsontype === 'Binary') {
+    return Buffer.from(obj.buffer);
+  }
+  
+  for (const key in obj) {
+    if (obj[key] && typeof obj[key] === 'object') {
+      if (obj[key]._bsontype === 'Binary') {
+        obj[key] = Buffer.from(obj[key].buffer);
+      } else {
+        obj[key] = convertBinaryToBuffer(obj[key]);
+      }
+    }
+  }
+  
+  return obj;
+}
+
+function prepareForMongoDB(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  const result = {};
+  for (const key in obj) {
+    if (obj[key]) {
+      if (Buffer.isBuffer(obj[key])) {
+        result[key] = new Binary(obj[key]);
+      } else if (ArrayBuffer.isView(obj[key]) || obj[key] instanceof ArrayBuffer) {
+        result[key] = new Binary(Buffer.from(obj[key]));
+      } else if (typeof obj[key] === 'object') {
+        result[key] = prepareForMongoDB(obj[key]);
+      } else {
+        result[key] = obj[key];
+      }
+    } else {
+      result[key] = obj[key];
+    }
+  }
+  
+  return result;
+}
+
+const useMongoDBAuthState = async (uri, dbName = 'baileys-auth') => {
   try {
     const db = await mongoConnectionManager.getDb(dbName, uri);
     
@@ -44,10 +88,8 @@ export const useMongoDBAuthState = async (uri, dbName = 'baileys-auth') => {
               }).toArray();
               
               for (const key of keys) {
-                // Apply proper binary conversion to the entire value object
                 let value = convertBinaryToBuffer(key.value);
                 
-                // Special handling for app-state-sync-key
                 if (type === 'app-state-sync-key' && value) {
                   value = proto.Message.AppStateSyncKeyData.fromObject(value);
                 }
@@ -129,64 +171,4 @@ export const useMongoDBAuthState = async (uri, dbName = 'baileys-auth') => {
   }
 };
 
-/**
- * Helper function to convert MongoDB Binary objects to Buffer
- * @param {Object} obj Object potentially containing Binary values
- */
-function convertBinaryToBuffer(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  
-  // Handle arrays
-  if (Array.isArray(obj)) {
-    for (let i = 0; i < obj.length; i++) {
-      obj[i] = convertBinaryToBuffer(obj[i]);
-    }
-    return obj;
-  }
-  
-  // Handle Binary object directly
-  if (obj._bsontype === 'Binary') {
-    return Buffer.from(obj.buffer);
-  }
-  
-  // Handle object properties
-  for (const key in obj) {
-    if (obj[key] && typeof obj[key] === 'object') {
-      if (obj[key]._bsontype === 'Binary') {
-        obj[key] = Buffer.from(obj[key].buffer);
-      } else {
-        obj[key] = convertBinaryToBuffer(obj[key]);
-      }
-    }
-  }
-  
-  return obj;
-}
-
-/**
- * Prepares objects for MongoDB storage by converting Buffers to Binary
- * @param {Object} obj Object potentially containing Buffer values
- * @returns {Object} Object with Binary values instead of Buffer
- */
-function prepareForMongoDB(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  
-  const result = {};
-  for (const key in obj) {
-    if (obj[key]) {
-      if (Buffer.isBuffer(obj[key])) {
-        result[key] = new Binary(obj[key]);
-      } else if (ArrayBuffer.isView(obj[key]) || obj[key] instanceof ArrayBuffer) {
-        result[key] = new Binary(Buffer.from(obj[key]));
-      } else if (typeof obj[key] === 'object') {
-        result[key] = prepareForMongoDB(obj[key]);
-      } else {
-        result[key] = obj[key];
-      }
-    } else {
-      result[key] = obj[key];
-    }
-  }
-  
-  return result;
-}
+module.exports = { useMongoDBAuthState };
