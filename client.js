@@ -1,14 +1,13 @@
 const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion, DisconnectReason } = require("@whiskeysockets/baileys");
 const fs = require("fs");
-const qrcode = require('qrcode-terminal');
 const pino = require("pino");
-const { PORT, ADMINS, MONGODB_URI, BOT_NUMBER } = require("./config");
+const { ADMINS, BOT_NUMBER } = require("./config");
 const { handleCommand, getMessageText } = require("./handler");
 const { logToTerminal } = require("./print");
 
 let sock = null;
 let isConnected = false;
-let pairingCode = "MEGAAI44"; // Fixed pairing code
+let pairingCode = null; // Will be generated dynamically
 
 async function connectToWhatsApp() {
     try {
@@ -25,7 +24,7 @@ async function connectToWhatsApp() {
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
             syncFullHistory: false,
-            printQRInTerminal: true
+            printQRInTerminal: false // No QR code
         };
 
         sock = makeWASocket(connectionOptions);
@@ -33,43 +32,30 @@ async function connectToWhatsApp() {
         logToTerminal('✅ Session file authentication initialized');
 
         let connectionStartTime = Date.now();
-        let qrDisplayed = false;
 
-        // Display pairing code immediately
-        logToTerminal('\n🎯 PAIRING CODE: MEGAAI44');
-        logToTerminal('📱 Use this code in WhatsApp Linked Devices');
-        logToTerminal('============================================');
+        // Generate actual pairing code
+        if (!state.creds.registered) {
+            try {
+                pairingCode = await sock.requestPairingCode(BOT_NUMBER);
+                logToTerminal('\n🎯 REAL PAIRING CODE: ' + pairingCode);
+                logToTerminal('📱 Use this code in WhatsApp Linked Devices');
+                logToTerminal('============================================');
+            } catch (error) {
+                logToTerminal('❌ Failed to generate pairing code: ' + error.message);
+                logToTerminal('🔄 Retrying in 10 seconds...');
+                setTimeout(() => connectToWhatsApp(), 10000);
+                return;
+            }
+        }
 
         // Connection event handler
         sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
-
-            // Handle QR Code
-            if (qr && !qrDisplayed) {
-                qrDisplayed = true;
-                
-                logToTerminal('\n🔍 QR CODE GENERATED - SCAN WITH WHATSAPP');
-                logToTerminal('==========================================');
-                
-                qrcode.generate(qr, { small: true }, function (qrcode) {
-                    console.log(qrcode);
-                });
-                
-                logToTerminal('==========================================\n');
-                
-                // QR code expiration
-                setTimeout(() => {
-                    if (!isConnected && qrDisplayed) {
-                        logToTerminal('🔄 QR code expired. Regenerating...');
-                        qrDisplayed = false;
-                    }
-                }, 60000);
-            }
+            const { connection, lastDisconnect } = update;
 
             // Handle successful connection
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
-                qrDisplayed = false;
+                pairingCode = null; // Clear pairing code after successful connection
                 
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
                 logToTerminal('🎉 WhatsApp Connected Successfully!');
@@ -85,7 +71,7 @@ async function connectToWhatsApp() {
             if (connection === 'close') {
                 logToTerminal('❌ WhatsApp connection closed');
                 isConnected = false;
-                qrDisplayed = false;
+                pairingCode = null;
                 
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -161,7 +147,6 @@ async function sendOnlineNotification() {
 • Bot Number: ${BOT_NUMBER}
 • Admins: ${ADMINS.length}
 • Version: 2.0.0
-• Pairing Code: MEGAAI44
 
 ⏰ Connected at: ${new Date().toLocaleString()}
 
