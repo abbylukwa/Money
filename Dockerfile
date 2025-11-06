@@ -23,8 +23,9 @@ COPY package*.json ./
 # Install dependencies with legacy peer deps to resolve conflicts
 RUN npm install --legacy-peer-deps
 
-# Create necessary directories
+# Create necessary directories and dummy A.jpg file
 RUN mkdir -p sessions assets lib/temp/session
+RUN echo "dummy" > ./assets/A.jpg
 
 EXPOSE 3000
 
