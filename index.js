@@ -1,5 +1,5 @@
 const { PORT, ADMINS, MONGODB_URI, BOT_NUMBER } = require("./config");
-const { connectToWhatsApp } = require("./client");
+const { connectToWhatsApp, waitForConnection } = require("./client");
 const { logToTerminal } = require("./print");
 
 // Simple banner
@@ -30,6 +30,13 @@ async function startApplication() {
         
         // Start WhatsApp connection
         await connectToWhatsApp();
+        
+        // Wait for the connection to be established
+        logToTerminal('⏳ Waiting for WhatsApp connection...');
+        await waitForConnection();
+        
+        logToTerminal('\n✅ Bot is fully operational and ready!');
+        logToTerminal('📱 You can now use WhatsApp commands');
 
     } catch (error) {
         logToTerminal(`❌ Failed to start application: ${error}`);
