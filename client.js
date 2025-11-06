@@ -1,70 +1,109 @@
-const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { makeWASocket, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion, DisconnectReason } = require("@whiskeysockets/baileys");
+const fs = require("fs");
 const qrcode = require('qrcode-terminal');
 const pino = require("pino");
-const express = require("express");
-const app = express();
-const { PORT } = require("./config");
+const { PORT, ADMINS, MONGODB_URI, BOT_NUMBER } = require("./config");
+const { handleCommand, getMessageText } = require("./handler");
+const { logToTerminal } = require("./print");
 
-const ADMINS = [
-    '263717457592@s.whatsapp.net',
-    '263777627210@s.whatsapp.net', 
-    '27614159817@s.whatsapp.net'
-];
-
-process.on('SIGTERM', () => {
-    console.log('🔄 Received SIGTERM, cleaning up...');
-    process.exit(0);
-});
-
-process.on('SIGINT', () => {
-    console.log('🔄 Received SIGINT, shutting down...');
-    process.exit(0);
-});
+let sock = null;
+let isConnected = false;
+let pairingCode = "MEGAAI44"; // Fixed pairing code
 
 async function connectToWhatsApp() {
     try {
-        const { state, saveCreds } = await useMultiFileAuthState('./session');
+        logToTerminal('🔗 Initializing WhatsApp connection...');
+        logToTerminal(`📞 Using bot number: ${BOT_NUMBER}`);
+        
+        // Always use session file authentication
+        const { state, saveCreds } = await useMultiFileAuthState('./sessions');
         const { version } = await fetchLatestBaileysVersion();
 
-        const sock = makeWASocket({
+        const connectionOptions = {
             version,
             logger: pino({ level: "silent" }),
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
-            printQRInTerminal: false
-        });
+            syncFullHistory: false,
+            printQRInTerminal: true
+        };
 
+        sock = makeWASocket(connectionOptions);
         sock.ev.on('creds.update', saveCreds);
+        logToTerminal('✅ Session file authentication initialized');
 
+        let connectionStartTime = Date.now();
         let qrDisplayed = false;
-        let isConnected = false;
 
-        sock.ev.on('connection.update', (update) => {
+        // Display pairing code immediately
+        logToTerminal('\n🎯 PAIRING CODE: MEGAAI44');
+        logToTerminal('📱 Use this code in WhatsApp Linked Devices');
+        logToTerminal('============================================');
+
+        // Connection event handler
+        sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
+            // Handle QR Code
             if (qr && !qrDisplayed) {
                 qrDisplayed = true;
-                console.clear();
-                qrcode.generate(qr, { small: true });
+                
+                logToTerminal('\n🔍 QR CODE GENERATED - SCAN WITH WHATSAPP');
+                logToTerminal('==========================================');
+                
+                qrcode.generate(qr, { small: true }, function (qrcode) {
+                    console.log(qrcode);
+                });
+                
+                logToTerminal('==========================================\n');
+                
+                // QR code expiration
+                setTimeout(() => {
+                    if (!isConnected && qrDisplayed) {
+                        logToTerminal('🔄 QR code expired. Regenerating...');
+                        qrDisplayed = false;
+                    }
+                }, 60000);
             }
 
+            // Handle successful connection
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
-                console.clear();
-                console.log('✅ WhatsApp Connected!');
-                notifyAdminsOnline(sock);
+                qrDisplayed = false;
+                
+                const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
+                logToTerminal('🎉 WhatsApp Connected Successfully!');
+                logToTerminal(`⏰ Connection established in ${connectionTime} seconds`);
+                
+                const user = sock.user;
+                logToTerminal(`👤 Connected as: ${user.name || user.id}`);
+                
+                await sendOnlineNotification();
             }
 
+            // Handle connection close
             if (connection === 'close') {
-                console.clear();
-                console.log('❌ Connection closed');
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
+                logToTerminal('❌ WhatsApp connection closed');
+                isConnected = false;
+                qrDisplayed = false;
+                
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                
                 if (shouldReconnect) {
+                    logToTerminal('🔄 Attempting to reconnect in 5 seconds...');
+                    setTimeout(() => connectToWhatsApp(), 5000);
+                } else {
+                    logToTerminal('❌ Device logged out. Cleaning up and restarting...');
+                    if (fs.existsSync('./sessions')) {
+                        fs.rmSync('./sessions', { recursive: true, force: true });
+                    }
                     setTimeout(() => connectToWhatsApp(), 5000);
                 }
             }
         });
 
+        // Message handler
         sock.ev.on('messages.upsert', async (m) => {
             if (!isConnected) return;
             
@@ -73,86 +112,73 @@ async function connectToWhatsApp() {
 
             const jid = message.key.remoteJid;
             const user = message.pushName || 'Unknown';
+            const text = getMessageText(message).toLowerCase().trim();
             
-            console.log(`📨 Message from ${user}: ${getMessageText(message)}`);
+            const isAdmin = ADMINS.includes(jid);
             
-            if (message.message.conversation || message.message.extendedTextMessage) {
-                const text = getMessageText(message).toLowerCase();
-                
-                if (text === 'ping') {
-                    await sock.sendMessage(jid, { text: '🏓 Pong!' });
-                }
-                
-                if (text === '!status') {
-                    await sock.sendMessage(jid, { text: '🤖 Bot is online and running!' });
-                }
+            // Log all messages but only respond to admins
+            logToTerminal(`📨 Message from ${user} (${isAdmin ? 'Admin' : 'User'}): ${text}`);
+            
+            if (!isAdmin) {
+                logToTerminal('🚫 Ignoring message from non-admin user');
+                return;
+            }
+            
+            let reply = await handleCommand(jid, text, sock, isConnected);
+            
+            try {
+                await sock.sendMessage(jid, { text: reply });
+                logToTerminal(`✅ Reply sent to admin ${user}`);
+            } catch (error) {
+                logToTerminal(`❌ Failed to send reply: ${error.message}`);
             }
         });
 
         return sock;
 
     } catch (error) {
-        console.clear();
-        console.log('❌ Connection error, reconnecting...');
+        logToTerminal(`❌ Connection error: ${error.message}`);
+        logToTerminal('🔄 Reconnecting in 5 seconds...');
         setTimeout(() => connectToWhatsApp(), 5000);
+        return null;
     }
 }
 
-function getMessageText(message) {
-    if (message.message.conversation) {
-        return message.message.conversation;
-    }
-    if (message.message.extendedTextMessage) {
-        return message.message.extendedTextMessage.text;
-    }
-    if (message.message.imageMessage) {
-        return message.message.imageMessage.caption || '[Image]';
-    }
-    return '[Media Message]';
-}
-
-async function notifyAdminsOnline(sock) {
-    const onlineMessage = '🤖 *Bot Status Update*\n\n✅ Bot is now online and ready!\n\n*Connection Time:* ' + new Date().toLocaleString();
+// Send online notification to admins
+async function sendOnlineNotification() {
+    if (!sock || !isConnected) return;
     
+    const onlineMessage = `🤖 *Knight Bot - Online!*
+
+✅ *Your bot is now connected and ready!*
+
+✨ *Features Active:*
+• Auto-reply to admin messages
+• Multi-authentication support
+• 24/7 operation
+
+🌐 *System Information:*
+• Bot Number: ${BOT_NUMBER}
+• Admins: ${ADMINS.length}
+• Version: 2.0.0
+• Pairing Code: MEGAAI44
+
+⏰ Connected at: ${new Date().toLocaleString()}
+
+Type "menu" to see available commands.`;
+
     for (const admin of ADMINS) {
         try {
-            await sock.sendMessage(admin, { 
-                text: onlineMessage 
-            });
-            console.log(`📢 Online notification sent to: ${admin}`);
+            await sock.sendMessage(admin, { text: onlineMessage });
+            logToTerminal(`📤 Online notification sent to admin: ${admin}`);
         } catch (error) {
-            console.log(`❌ Failed to notify admin ${admin}:`, error.message);
+            logToTerminal(`❌ Could not send online message to ${admin}: ${error.message}`);
         }
     }
 }
 
-const web = () => {
-    app.get('/', (req, res) => res.send('🤖 Abners Bot 2025 - Active & Running'));
-    app.get('/health', (req, res) => res.json({ 
-        status: 'online',
-        bot: 'Abners Bot 2025',
-        timestamp: new Date() 
-    }));
-    
-    const server = app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
-    
-    process.on('SIGTERM', () => {
-        server.close(() => {
-            console.log('🌐 Web server closed');
-            process.exit(0);
-        });
-    });
+function getConnectionStatus() {
+    return { isConnected, pairingCode };
 }
 
-class WhatsApp {
-    async connect() {
-        this.conn = await connectToWhatsApp();
-        return this.conn;
-    }
-
-    async web() {
-        return web();
-    }
-}
-
-module.exports = WhatsApp;
+module.exports = { connectToWhatsApp, getConnectionStatus };
