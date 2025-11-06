@@ -17,18 +17,18 @@ WORKDIR /app
 # Clone the repository
 RUN git clone https://github.com/abbylukwa/Money.git .
 
-# Copy package files first for better caching
-COPY package*.json ./
+# Copy the corrected files
+COPY config.js ./config.js
+COPY client.js ./client.js
+COPY index.js ./index.js
+COPY print.js ./print.js
+COPY handler.js ./handler.js
 
-# Install specific compatible version of chalk
-RUN npm install chalk@4.1.2 --legacy-peer-deps
-
-# Install other dependencies
+# Install dependencies
 RUN npm install --legacy-peer-deps
 
-# Create necessary directories and dummy A.jpg file
-RUN mkdir -p sessions assets lib/temp/session
-RUN echo "dummy" > ./assets/A.jpg
+# Create necessary directories
+RUN mkdir -p sessions assets
 
 EXPOSE 3000
 
