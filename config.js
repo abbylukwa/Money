@@ -65,8 +65,8 @@ global.fgyt = 'https://youtube.com/@BobbyX208';
 global.fgpyp = 'https://youtube.com/@BobbyX208';
 global.fglog = 'https://i.ibb.co/G2dh9cB/qasim.jpg';
 
-const fs = require('fs');
-global.thumb = fs.readFileSync('./assets/A.jpg');
+// Remove the problematic file read - set thumb to null or empty
+global.thumb = null;
 
 global.wait = '⏳';
 global.rwait = '⏳';
