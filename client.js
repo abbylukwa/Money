@@ -7,14 +7,14 @@ const { logToTerminal } = require("./print");
 
 let sock = null;
 let isConnected = false;
-let pairingCode = null; // Will be generated dynamically
+let pairingCode = null;
 
 async function connectToWhatsApp() {
     try {
         logToTerminal('🔗 Initializing WhatsApp connection...');
-        logToTerminal(`📞 Using bot number: ${BOT_NUMBER}`);
+        logToTerminal(`📞 Bot Number: ${BOT_NUMBER}`);
         
-        // Always use session file authentication
+        // Use session file authentication
         const { state, saveCreds } = await useMultiFileAuthState('./sessions');
         const { version } = await fetchLatestBaileysVersion();
 
@@ -24,24 +24,30 @@ async function connectToWhatsApp() {
             auth: state,
             browser: Browsers.ubuntu('Chrome'),
             syncFullHistory: false,
-            printQRInTerminal: false // No QR code
+            printQRInTerminal: false
         };
 
         sock = makeWASocket(connectionOptions);
         sock.ev.on('creds.update', saveCreds);
-        logToTerminal('✅ Session file authentication initialized');
+        logToTerminal('✅ Session authentication initialized');
 
         let connectionStartTime = Date.now();
 
-        // Generate actual pairing code
+        // Generate real pairing code if not registered
         if (!state.creds.registered) {
             try {
-                pairingCode = await sock.requestPairingCode(BOT_NUMBER);
-                logToTerminal('\n🎯 REAL PAIRING CODE: ' + pairingCode);
-                logToTerminal('📱 Use this code in WhatsApp Linked Devices');
-                logToTerminal('============================================');
+                logToTerminal('🔄 Generating real pairing code...');
+                pairingCode = await sock.requestPairingCode(BOT_NUMBER.replace(/[^0-9]/g, ''));
+                
+                logToTerminal('\n🎯 ================================');
+                logToTerminal(`🎯 REAL PAIRING CODE: ${pairingCode}`);
+                logToTerminal('🎯 ================================');
+                logToTerminal('📱 Use this REAL code in WhatsApp');
+                logToTerminal('📱 This will connect your actual WhatsApp account');
+                logToTerminal('====================================\n');
+                
             } catch (error) {
-                logToTerminal('❌ Failed to generate pairing code: ' + error.message);
+                logToTerminal(`❌ Failed to generate pairing code: ${error.message}`);
                 logToTerminal('🔄 Retrying in 10 seconds...');
                 setTimeout(() => connectToWhatsApp(), 10000);
                 return;
@@ -55,7 +61,7 @@ async function connectToWhatsApp() {
             // Handle successful connection
             if (connection === 'open' && !isConnected) {
                 isConnected = true;
-                pairingCode = null; // Clear pairing code after successful connection
+                pairingCode = null;
                 
                 const connectionTime = Math.round((Date.now() - connectionStartTime) / 1000);
                 logToTerminal('🎉 WhatsApp Connected Successfully!');
@@ -63,6 +69,7 @@ async function connectToWhatsApp() {
                 
                 const user = sock.user;
                 logToTerminal(`👤 Connected as: ${user.name || user.id}`);
+                logToTerminal(`📱 Phone: ${user.id}`);
                 
                 await sendOnlineNotification();
             }
@@ -80,7 +87,7 @@ async function connectToWhatsApp() {
                     logToTerminal('🔄 Attempting to reconnect in 5 seconds...');
                     setTimeout(() => connectToWhatsApp(), 5000);
                 } else {
-                    logToTerminal('❌ Device logged out. Cleaning up and restarting...');
+                    logToTerminal('❌ Device logged out. Cleaning up...');
                     if (fs.existsSync('./sessions')) {
                         fs.rmSync('./sessions', { recursive: true, force: true });
                     }
@@ -102,7 +109,6 @@ async function connectToWhatsApp() {
             
             const isAdmin = ADMINS.includes(jid);
             
-            // Log all messages but only respond to admins
             logToTerminal(`📨 Message from ${user} (${isAdmin ? 'Admin' : 'User'}): ${text}`);
             
             if (!isAdmin) {
@@ -136,11 +142,11 @@ async function sendOnlineNotification() {
     
     const onlineMessage = `🤖 *Knight Bot - Online!*
 
-✅ *Your bot is now connected and ready!*
+✅ *Your WhatsApp bot is now connected and ready!*
 
 ✨ *Features Active:*
 • Auto-reply to admin messages
-• Multi-authentication support
+• Real WhatsApp connection
 • 24/7 operation
 
 🌐 *System Information:*
